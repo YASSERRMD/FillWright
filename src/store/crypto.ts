@@ -20,7 +20,7 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  return bytes.buffer;
+  return bytes.buffer.slice(0) as ArrayBuffer;
 }
 
 function generateSalt(): Uint8Array {
@@ -44,7 +44,7 @@ async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKe
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt,
+      salt: salt.slice(0),
       iterations: PBKDF2_ITERATIONS,
       hash: 'SHA-256',
     },
@@ -62,7 +62,7 @@ export async function encrypt(data: string, passphrase: string): Promise<Encrypt
 
   const encoder = new TextEncoder();
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv.slice(0) },
     key,
     encoder.encode(data)
   );
@@ -74,7 +74,7 @@ export async function decrypt(encrypted: EncryptedData, passphrase: string): Pro
   const key = await deriveKey(passphrase, encrypted.salt);
 
   const decrypted = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: encrypted.iv },
+    { name: 'AES-GCM', iv: encrypted.iv.slice(0) },
     key,
     encrypted.ciphertext
   );
@@ -86,8 +86,8 @@ export async function decrypt(encrypted: EncryptedData, passphrase: string): Pro
 export function encryptedDataToBase64(data: EncryptedData): string {
   return JSON.stringify({
     ciphertext: arrayBufferToBase64(data.ciphertext),
-    iv: arrayBufferToBase64(data.iv.buffer),
-    salt: arrayBufferToBase64(data.salt.buffer),
+    iv: arrayBufferToBase64(data.iv.buffer.slice(0) as ArrayBuffer),
+    salt: arrayBufferToBase64(data.salt.buffer.slice(0) as ArrayBuffer),
   });
 }
 
