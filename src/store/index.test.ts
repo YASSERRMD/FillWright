@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { unlock, lock, getProfile } from './index';
 
 describe('Store', () => {
-  it('should export profile functions', async () => {
-    const store = await import('../src/store');
-    expect(typeof store.unlock).toBe('function');
-    expect(typeof store.lock).toBe('function');
-    expect(typeof store.getProfile).toBe('function');
+  it('should export profile functions', () => {
+    expect(typeof unlock).toBe('function');
+    expect(typeof lock).toBe('function');
+    expect(typeof getProfile).toBe('function');
   });
 });

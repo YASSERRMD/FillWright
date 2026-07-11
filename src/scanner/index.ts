@@ -1,12 +1,6 @@
 import type { FormSchema, ScanOptions } from '../types';
 
-export function scanPage(options?: ScanOptions): FormSchema {
-  const opts: ScanOptions = {
-    includeHidden: false,
-    debounceMs: 300,
-    ...options,
-  };
-
+export function scanPage(_options?: ScanOptions): FormSchema {
   return {
     url: window.location.href,
     title: document.title,
