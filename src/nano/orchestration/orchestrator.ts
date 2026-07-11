@@ -1,5 +1,3 @@
-import type { FormSchema } from '../../types';
-import type { FillPlan } from '../types';
 import type { OrchestrationConfig, OrchestrationEvent, OrchestrationListener, OrchestrationResult } from './types';
 import { scanPage } from '../../scanner';
 import { generateFillPlan } from '../index';
