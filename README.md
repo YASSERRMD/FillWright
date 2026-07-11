@@ -74,30 +74,6 @@ demo/           demo host forms
 e2e/            end-to-end tests
 ```
 
-## Git Conventions
-
-### Author and Committer
-
-```
-YASSERRMD <arafath.yasser@gmail.com>
-```
-
-### Branching
-
-- One branch per phase: `feature/phase-NN-short-slug`
-- Branch from main at the start of each phase
-- Merge back into main with `git merge --no-ff`
-- Never squash, never fast-forward, never rebase-collapse history
-
-### Commits
-
-- Minimum 20 atomic commits per phase
-- Conventional Commits format: `type(scope): summary`
-- Types: feat, fix, refactor, test, docs, chore, build, perf, style
-- Imperative mood, lowercase summary, no trailing period
-- No em dash character anywhere
-- No AI attribution or co-author trailers
-
 ## License
 
 MIT
