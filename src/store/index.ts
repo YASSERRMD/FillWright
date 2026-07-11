@@ -1,49 +1,16 @@
-export interface Profile {
-  identity: {
-    givenName: string;
-    familyName: string;
-    fullName: string;
-    preferredName: string;
-  };
-  contact: {
-    email: string;
-    phone: string;
-    addresses: string[];
-  };
-  documents: Record<string, string>;
-  employment: Record<string, string>;
-  custom: Record<string, string>;
-}
+export {
+  unlock,
+  lock,
+  getProfile,
+  setField,
+  getField,
+  save,
+  importProfile,
+  exportProfile,
+  deleteProfile,
+  getFlattenedProfile,
+  setIdleTimeout,
+} from './profile';
 
-let unlocked = false;
-let currentProfile: Profile | null = null;
-
-export async function unlock(_passphrase: string): Promise<boolean> {
-  unlocked = true;
-  return true;
-}
-
-export function lock(): void {
-  unlocked = false;
-  currentProfile = null;
-}
-
-export function getProfile(): Profile | null {
-  if (!unlocked) return null;
-  return currentProfile;
-}
-
-export function setField(_path: string, _value: string): boolean {
-  if (!unlocked) return false;
-  return true;
-}
-
-export function importProfile(_json: string): boolean {
-  if (!unlocked) return false;
-  return true;
-}
-
-export function exportProfile(): string | null {
-  if (!unlocked) return null;
-  return JSON.stringify(currentProfile);
-}
+export { encrypt, decrypt, encryptedDataToBase64, base64ToEncryptedData } from './crypto';
+export { saveToDB, loadFromDB, deleteFromDB, hasProfileInDB } from './db';

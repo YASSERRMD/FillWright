@@ -37,3 +37,5 @@ export interface TokenEstimate {
   characters: number;
   estimatedTokens: number;
 }
+
+export type { Identity, Contact, Documents, Employment, Custom, Profile, EncryptedData, ProfilePath } from './profile';
