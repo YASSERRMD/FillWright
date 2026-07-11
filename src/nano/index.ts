@@ -1,7 +1,7 @@
 import type { FillPlan, NanoStatus } from './types';
 import type { FormSchema } from '../types';
-import { checkAvailability, downloadModel } from './availability';
-import { createSession, getSession, resetSession } from './session';
+import { checkAvailability } from './availability';
+import { createSession, getSession } from './session';
 import { buildPrompt, getSystemPrompt, trimSchemaToTokenBudget, trimProfileToTokenBudget } from './prompt';
 import { parseFillPlan } from './parser';
 import { generateFallbackPlan } from './fallback';
@@ -54,7 +54,7 @@ export async function generateFillPlan(
     }
 
     return { ok: true, plan: result.plan, source: 'nano' };
-  } catch (err) {
+  } catch {
     const fallbackPlan = generateFallbackPlan(schema, profile);
     return { ok: true, plan: fallbackPlan, source: 'fallback' };
   }

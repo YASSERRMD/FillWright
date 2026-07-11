@@ -29,7 +29,7 @@ export function getSystemPrompt(): string {
 }
 
 export function trimSchemaToTokenBudget(
-  schema: { fields: Array<{ field_id: string; label: string; type: string; options?: Array<{ value: string; label: string }> | null }> },
+  schema: { fields: Array<{ field_id: string; label: string | null; type: string; options?: Array<{ value: string; label: string }> | null }> },
   maxFields: number
 ): typeof schema {
   if (schema.fields.length <= maxFields) {
