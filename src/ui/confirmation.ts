@@ -1,7 +1,6 @@
 import type { DiffItem, OverlayOptions } from './types';
 
 const OVERLAY_ID = 'fillwright-overlay';
-const STYLE_ID = 'fillwright-styles';
 
 const STYLES = `
   :host {

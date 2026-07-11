@@ -16,11 +16,10 @@ describe('ConfirmationOverlay', () => {
   });
 
   it('should create overlay with items', () => {
-    let confirmed = false;
     const overlay = new ConfirmationOverlay({
       mode: 'review-before-fill',
       items: createTestItems(),
-      onConfirm: () => { confirmed = true; },
+      onConfirm: () => {},
       onCancel: () => {},
     });
 
@@ -60,7 +59,7 @@ describe('ConfirmationOverlay', () => {
 
   it('should call onConfirm with accepted items', () => {
     let acceptedItems: DiffItem[] = [];
-    const overlay = new ConfirmationOverlay({
+    new ConfirmationOverlay({
       mode: 'review-before-fill',
       items: createTestItems(),
       onConfirm: (items) => { acceptedItems = items; },
@@ -77,7 +76,7 @@ describe('ConfirmationOverlay', () => {
 
   it('should call onCancel when cancelled', () => {
     let cancelled = false;
-    const overlay = new ConfirmationOverlay({
+    new ConfirmationOverlay({
       mode: 'review-before-fill',
       items: createTestItems(),
       onConfirm: () => {},
@@ -140,14 +139,14 @@ describe('showConfirmation', () => {
   });
 
   it('should replace existing overlay', () => {
-    const overlay1 = showConfirmation({
+    showConfirmation({
       mode: 'review-before-fill',
       items: createTestItems(),
       onConfirm: () => {},
       onCancel: () => {},
     });
 
-    const overlay2 = showConfirmation({
+    showConfirmation({
       mode: 'review-before-fill',
       items: createTestItems(),
       onConfirm: () => {},
@@ -156,7 +155,6 @@ describe('showConfirmation', () => {
 
     const overlays = document.querySelectorAll('#fillwright-overlay');
     expect(overlays).toHaveLength(1);
-    overlay2.destroy();
   });
 });
 
