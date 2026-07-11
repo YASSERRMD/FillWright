@@ -10,6 +10,8 @@ Local-first, multi-step form autofiller. Gemini Nano (Chrome built-in AI) reads 
 - Encrypted profile store with AES-GCM
 - Multi-step wizard support
 - Framework-safe event dispatch (React, Vue, Angular, Svelte)
+- Deterministic fallback when Nano is unavailable
+- Confirmation overlay with accept/reject per field
 
 ## Tech Stack
 
@@ -26,7 +28,7 @@ Local-first, multi-step form autofiller. Gemini Nano (Chrome built-in AI) reads 
 ### Prerequisites
 
 - Node.js 18+
-- Chrome with Gemini Nano support
+- Chrome 131+ with Gemini Nano support
 
 ### Installation
 
@@ -72,7 +74,14 @@ src/
   types/        shared types
 demo/           demo host forms
 e2e/            end-to-end tests
+docs/           documentation
 ```
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Security Model](docs/security.md)
+- [Limitations](docs/limitations.md)
 
 ## License
 
