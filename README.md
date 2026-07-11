@@ -76,4 +76,4 @@ e2e/            end-to-end tests
 
 ## License
 
-MIT
+Apache 2.0
