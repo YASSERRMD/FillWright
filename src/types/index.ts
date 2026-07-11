@@ -16,6 +16,7 @@ export interface FormField {
   currentValue: string;
   nearbyText: string | null;
   step_hint?: string;
+  hidden?: boolean;
 }
 
 export interface FormSchema {
@@ -29,4 +30,10 @@ export interface FormSchema {
 export interface ScanOptions {
   includeHidden: boolean;
   debounceMs: number;
+}
+
+export interface TokenEstimate {
+  fields: number;
+  characters: number;
+  estimatedTokens: number;
 }
