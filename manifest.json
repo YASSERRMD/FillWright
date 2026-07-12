@@ -5,7 +5,8 @@
   "description": "Local-first, multi-step form autofiller powered by Gemini Nano. Write a paragraph about yourself and Fillwright fills forms for you.",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "offscreen"
   ],
   "content_scripts": [
     {
@@ -17,6 +18,10 @@
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "offscreen": {
+    "reasons": ["DOM_PARSER"],
+    "required": true
   },
   "action": {
     "default_popup": "popup.html",

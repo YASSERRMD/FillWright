@@ -1,5 +1,25 @@
 // Fillwright Background Service Worker
-// Handles extension lifecycle and messaging
+// Handles extension lifecycle, messaging, and offscreen document
+
+let offscreenCreated = false;
+
+async function ensureOffscreen(): Promise<void> {
+  if (offscreenCreated) return;
+
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['DOM_PARSER' as chrome.offscreen.Reason],
+      justification: 'Gemini Nano LanguageModel API requires page context',
+    });
+    offscreenCreated = true;
+    console.log('[Fillwright] Offscreen document created');
+  } catch (err) {
+    console.warn('[Fillwright] Offscreen creation error:', err);
+    // May already exist
+    offscreenCreated = true;
+  }
+}
 
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
@@ -32,6 +52,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const profiles = (data.profiles ?? {}) as Record<string, Record<string, string>>;
       const active = (data.activeProfile as string) ?? '';
       sendResponse({ profile: profiles[active] ?? {} });
+    });
+    return true;
+  }
+
+  if (msg.type === 'CHECK_NANO') {
+    ensureOffscreen().then(() => {
+      chrome.runtime.sendMessage({ type: 'CHECK_NANO' }, (response) => {
+        sendResponse(response);
+      });
+    });
+    return true;
+  }
+
+  if (msg.type === 'RUN_NANO') {
+    ensureOffscreen().then(() => {
+      chrome.runtime.sendMessage(
+        { type: 'RUN_NANO', schema: msg.schema, profile: msg.profile },
+        (response) => {
+          sendResponse(response);
+        }
+      );
     });
     return true;
   }

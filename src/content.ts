@@ -139,52 +139,7 @@ function removeFillwrightUI(): void {
   document.getElementById('fillwright-ext-btn')?.remove();
 }
 
-// --- Gemini Nano (runs in content script = page context) ---
-
-function getSystemPrompt(): string {
-  return `You are a form-filling assistant. You map profile data to form fields.
-
-Rules:
-1. Return ONLY a JSON array of fill steps. No prose, no markdown fences.
-2. Each step: { "tool": "fill_field"|"select_option"|"toggle", "field_id": "...", "value": "...", "confidence": 0.0-1.0 }
-3. For select_option, match by visible label or value.
-4. For toggle, use "true" or "false" as value.
-5. Split full name into given/family as needed.
-6. Normalize dates to each field's pattern.
-7. Normalize country names to match select options.
-8. If confidence < 0.5, leave the field empty (omit from the plan).
-9. Do not guess. Leave empty rather than guess.
-10. Do not include fields not present in the schema.`;
-}
-
-function buildPrompt(schemaJson: string, profileJson: string): string {
-  return `Given this form schema:
-${schemaJson}
-
-And this user profile:
-${profileJson}
-
-Map profile data to form fields. Return a JSON array of fill steps.`;
-}
-
-function stripMarkdownFences(raw: string): string {
-  let cleaned = raw.trim();
-  if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-  else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-  if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-  return cleaned.trim();
-}
-
-function validateStep(step: unknown): boolean {
-  const VALID_TOOLS = new Set(['fill_field', 'select_option', 'toggle']);
-  const obj = step as Record<string, unknown>;
-  if (typeof obj !== 'object' || obj === null) return false;
-  if (typeof obj.tool !== 'string' || !VALID_TOOLS.has(obj.tool)) return false;
-  if (typeof obj.field_id !== 'string' || obj.field_id.length === 0) return false;
-  if (typeof obj.value !== 'string') return false;
-  if (typeof obj.confidence !== 'number') return false;
-  return true;
-}
+// --- Gemini Nano (runs in offscreen document which has page context) ---
 
 interface NanoPlanResult {
   ok: boolean;
@@ -193,68 +148,54 @@ interface NanoPlanResult {
   error?: string;
 }
 
-async function generateFillPlanWithNano(
+function checkNanoAvailability(): Promise<string> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: 'CHECK_NANO' }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve('unavailable');
+        return;
+      }
+      resolve(response?.status ?? 'unavailable');
+    });
+  });
+}
+
+function runNanoPlan(
   schema: ReturnType<typeof scanPage>,
   profile: Record<string, string>
 ): Promise<NanoPlanResult> {
-  // Check if LanguageModel API is available
-  const LM = (window as unknown as Record<string, unknown>)['LanguageModel'] as {
-    availability: () => Promise<string>;
-    createSession: (opts: { systemPrompt: string }) => Promise<{
-      prompt: (input: string) => Promise<string>;
-      destroy: () => void;
-    }>;
-  } | undefined;
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: 'RUN_NANO', schema: { fields: schema.fields }, profile },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ ok: false, plan: [], source: 'nano', error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve(response ?? { ok: false, plan: [], source: 'nano', error: 'No response' });
+      }
+    );
+  });
+}
 
-  if (!LM) {
-    console.log('[Fillwright] LanguageModel API not available, using fallback');
-    return generateFallbackPlan(schema, profile);
+async function generateFillPlan(
+  schema: ReturnType<typeof scanPage>,
+  profile: Record<string, string>
+): Promise<NanoPlanResult> {
+  const status = await checkNanoAvailability();
+  console.log(`[Fillwright] Gemini Nano status: ${status}`);
+
+  if (status === 'available') {
+    console.log('[Fillwright] Using Gemini Nano for fill plan...');
+    const result = await runNanoPlan(schema, profile);
+    if (result.ok && result.plan.length > 0) {
+      return result;
+    }
+    console.warn('[Fillwright] Nano failed, falling back:', result.error);
   }
 
-  try {
-    const status = await LM.availability();
-    console.log(`[Fillwright] LanguageModel status: ${status}`);
-
-    if (status !== 'available') {
-      console.log('[Fillwright] Model not available, using fallback');
-      return generateFallbackPlan(schema, profile);
-    }
-
-    const session = await LM.createSession({ systemPrompt: getSystemPrompt() });
-    const prompt = buildPrompt(JSON.stringify({ fields: schema.fields }), JSON.stringify(profile));
-
-    console.log('[Fillwright] Sending prompt to Gemini Nano...');
-    const raw = await session.prompt(prompt);
-    session.destroy();
-
-    console.log('[Fillwright] Raw model response:', raw);
-
-    const cleaned = stripMarkdownFences(raw);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      console.warn('[Fillwright] Failed to parse model response as JSON');
-      return generateFallbackPlan(schema, profile);
-    }
-
-    if (!Array.isArray(parsed)) {
-      console.warn('[Fillwright] Model response is not an array');
-      return generateFallbackPlan(schema, profile);
-    }
-
-    const validSteps = (parsed as unknown[]).filter(validateStep);
-    if (validSteps.length === 0) {
-      console.warn('[Fillwright] No valid steps in model response');
-      return generateFallbackPlan(schema, profile);
-    }
-
-    console.log(`[Fillwright] Gemini Nano produced ${validSteps.length} fill steps`);
-    return { ok: true, plan: validSteps as Array<{ tool: string; field_id: string; value: string; confidence: number }>, source: 'nano' };
-  } catch (err) {
-    console.error('[Fillwright] Nano error:', err);
-    return generateFallbackPlan(schema, profile);
-  }
+  // Fallback to regex
+  return generateFallbackPlan(schema, profile);
 }
 
 // --- Fallback (regex-based) ---
@@ -417,7 +358,7 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
       btn.textContent = 'Planning...';
     }
 
-    const result = await generateFillPlanWithNano(schema, profile);
+    const result = await generateFillPlan(schema, profile);
 
     console.log(`[Fillwright] Fill plan (${result.source}):`, result.plan);
 
