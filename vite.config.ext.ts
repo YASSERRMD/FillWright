@@ -12,7 +12,7 @@ export default defineConfig({
         popup: resolve(__dirname, 'src/popup/popup.html'),
         content: resolve(__dirname, 'src/content.ts'),
         background: resolve(__dirname, 'src/background.ts'),
-        offscreen: resolve(__dirname, 'src/offscreen/offscreen.ts'),
+        'main-world': resolve(__dirname, 'src/main-world.ts'),
       },
       output: {
         entryFileNames: '[name].js',
@@ -43,14 +43,7 @@ export default defineConfig({
           rmSync(resolve(dist, 'src'), { recursive: true, force: true });
         }
 
-        // Move offscreen.html to dist/
-        const srcOffscreenHtml = resolve(__dirname, 'src/offscreen/offscreen.html');
-        if (existsSync(srcOffscreenHtml)) {
-          const html = readFileSync(srcOffscreenHtml, 'utf-8');
-          writeFileSync(resolve(dist, 'offscreen.html'), html);
-        }
-
-        // offscreen.js is already at dist/offscreen.js from rollup output
+        // main-world.js is already at dist/main-world.js from rollup output
 
         // Copy manifest.json
         const manifest = JSON.parse(readFileSync(resolve(__dirname, 'manifest.json'), 'utf-8'));

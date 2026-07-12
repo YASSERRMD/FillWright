@@ -1,20 +1,47 @@
 import { scanPage, observeChanges } from './scanner';
 
 let enabled = true;
+let requestId = 0;
+const pendingRequests = new Map<number, { resolve: (v: any) => void }>();
+
+// Listen for responses from MAIN world script
+window.addEventListener('message', (event) => {
+  if (event.source !== window) return;
+  if (event.data?.type !== 'FILLWRIGHT_NANO_RESPONSE') return;
+
+  const pending = pendingRequests.get(event.data.id);
+  if (pending) {
+    pending.resolve(event.data.result);
+    pendingRequests.delete(event.data.id);
+  }
+});
+
+function sendToMainWorld(action: string, data: Record<string, unknown> = {}): Promise<any> {
+  return new Promise((resolve) => {
+    const id = ++requestId;
+    pendingRequests.set(id, { resolve });
+    window.postMessage({ type: 'FILLWRIGHT_NANO_REQUEST', id, action, ...data }, '*');
+    // Timeout after 15s
+    setTimeout(() => {
+      if (pendingRequests.has(id)) {
+        pendingRequests.delete(id);
+        resolve({ status: 'timeout' });
+      }
+    }, 15000);
+  });
+}
 
 function getProfileFromStorage(): Promise<Record<string, string>> {
   return new Promise((resolve) => {
     try {
       chrome.runtime.sendMessage({ type: 'GET_PROFILE' }, (response) => {
         if (chrome.runtime.lastError) {
-          console.warn('[Fillwright] Extension context may be invalidated. Reload the page.');
           resolve({});
           return;
         }
         resolve(response?.profile ?? {});
       });
     } catch {
-      console.warn('[Fillwright] Extension context invalidated. Reload the page.');
       resolve({});
     }
   });
@@ -44,7 +71,7 @@ function showNotification(message: string, type: 'info' | 'error' | 'success'): 
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     z-index: 2147483646;
-    max-width: 320px;
+    max-width: 350px;
     border-left: 4px solid ${colors[type].border};
     animation: fillwright-slide-in 0.3s ease;
   `;
@@ -64,7 +91,7 @@ function showNotification(message: string, type: 'info' | 'error' | 'success'): 
     div.style.transition = 'opacity 0.3s';
     div.style.opacity = '0';
     setTimeout(() => div.remove(), 300);
-  }, 4000);
+  }, 5000);
 }
 
 function showNoProfileOverlay(): void {
@@ -86,10 +113,7 @@ function showNoProfileOverlay(): void {
     </div>
     <h2 style="margin:0 0 8px;font-family:Georgia,serif;font-size:18px;color:#1B2A4A;">No Profile Found</h2>
     <p style="margin:0 0 16px;font-size:14px;color:#666;line-height:1.5;">
-      You need to create a profile before Fillwright can fill forms.
-    </p>
-    <p style="margin:0 0 20px;font-size:13px;color:#999;line-height:1.5;">
-      Click the <strong style="color:#1B2A4A;">Fillwright icon</strong> in your Chrome toolbar, then click <strong style="color:#C5A55A;">+</strong> to create a profile.
+      Create a profile first. Click the Fillwright icon in your toolbar, then click <strong style="color:#C5A55A;">+</strong>.
     </p>
     <button id="fillwright-no-profile-close" style="padding:10px 24px;background:#1B2A4A;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:Georgia,serif;">
       Got it
@@ -139,71 +163,12 @@ function removeFillwrightUI(): void {
   document.getElementById('fillwright-ext-btn')?.remove();
 }
 
-// --- Gemini Nano (runs in offscreen document which has page context) ---
-
-interface NanoPlanResult {
-  ok: boolean;
-  plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>;
-  source: 'nano' | 'fallback';
-  error?: string;
-}
-
-function checkNanoAvailability(): Promise<string> {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'CHECK_NANO' }, (response) => {
-      if (chrome.runtime.lastError) {
-        resolve('unavailable');
-        return;
-      }
-      resolve(response?.status ?? 'unavailable');
-    });
-  });
-}
-
-function runNanoPlan(
-  schema: ReturnType<typeof scanPage>,
-  profile: Record<string, string>
-): Promise<NanoPlanResult> {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { type: 'RUN_NANO', schema: { fields: schema.fields }, profile },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          resolve({ ok: false, plan: [], source: 'nano', error: chrome.runtime.lastError.message });
-          return;
-        }
-        resolve(response ?? { ok: false, plan: [], source: 'nano', error: 'No response' });
-      }
-    );
-  });
-}
-
-async function generateFillPlan(
-  schema: ReturnType<typeof scanPage>,
-  profile: Record<string, string>
-): Promise<NanoPlanResult> {
-  const status = await checkNanoAvailability();
-  console.log(`[Fillwright] Gemini Nano status: ${status}`);
-
-  if (status === 'available') {
-    console.log('[Fillwright] Using Gemini Nano for fill plan...');
-    const result = await runNanoPlan(schema, profile);
-    if (result.ok && result.plan.length > 0) {
-      return result;
-    }
-    console.warn('[Fillwright] Nano failed, falling back:', result.error);
-  }
-
-  // Fallback to regex
-  return generateFallbackPlan(schema, profile);
-}
-
-// --- Fallback (regex-based) ---
+// --- Gemini Nano via MAIN world ---
 
 function generateFallbackPlan(
   schema: ReturnType<typeof scanPage>,
   profile: Record<string, string>
-): NanoPlanResult {
+): { plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>; source: string } {
   const plan: Array<{ tool: string; field_id: string; value: string; confidence: number }> = [];
 
   const LABEL_MAP: Array<{ patterns: RegExp[]; profileKey: string; tool: string }> = [
@@ -218,6 +183,10 @@ function generateFallbackPlan(
     { patterns: [/national\s*id/i, /id\s*number/i], profileKey: 'documents.nationalId', tool: 'fill_field' },
     { patterns: [/employer/i, /company/i, /organization/i], profileKey: 'employment.employer', tool: 'fill_field' },
     { patterns: [/job\s*title/i, /position/i, /role/i], profileKey: 'employment.jobTitle', tool: 'fill_field' },
+    { patterns: [/date\s*of\s*birth/i, /dob/i, /birthday/i], profileKey: 'custom.dateOfBirth', tool: 'fill_field' },
+    { patterns: [/gender/i, /sex/i], profileKey: 'custom.gender', tool: 'fill_field' },
+    { patterns: [/nationality/i], profileKey: 'custom.nationality', tool: 'fill_field' },
+    { patterns: [/newsletter/i, /subscribe/i], profileKey: 'custom.newsletter', tool: 'toggle' },
   ];
 
   for (const field of schema.fields) {
@@ -245,81 +214,103 @@ function generateFallbackPlan(
     const value = profile[profileKey] ?? '';
     if (!value) continue;
 
+    // For select_option, check if field has matching options
+    if (tool === 'select_option' && field.options) {
+      const match = field.options.find(
+        (o) => o.label.toLowerCase().includes(value.toLowerCase()) || o.value.toLowerCase().includes(value.toLowerCase())
+      );
+      if (!match) continue;
+    }
+
     plan.push({ tool, field_id: field.field_id, value, confidence: 0.7 });
   }
 
-  return { ok: true, plan, source: 'fallback' };
+  return { plan, source: 'fallback' };
 }
 
 // --- Fill execution ---
 
 function applyFillPlan(plan: Array<{ tool: string; field_id: string; value: string }>): number {
   let filled = 0;
+  const schema = scanPage();
 
   for (const step of plan) {
-    const schema = scanPage();
     const field = schema.fields.find((f) => f.field_id === step.field_id);
     if (!field) continue;
 
     const el = document.querySelector(field.selector);
     if (!el) continue;
 
-    if (step.tool === 'fill_field') {
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-        const nativeSetter = el instanceof HTMLInputElement
-          ? Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-          : Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-        if (nativeSetter) {
-          nativeSetter.call(el, step.value);
-        } else {
+    try {
+      if (step.tool === 'fill_field') {
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          const nativeSetter = el instanceof HTMLInputElement
+            ? Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+            : Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+          if (nativeSetter) {
+            nativeSetter.call(el, step.value);
+          } else {
+            el.value = step.value;
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled++;
+        } else if (el.getAttribute('role') === 'textbox' || el.getAttribute('contenteditable') === 'true') {
+          el.textContent = step.value;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled++;
+        }
+      } else if (step.tool === 'select_option') {
+        if (el instanceof HTMLSelectElement) {
           el.value = step.value;
-        }
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        filled++;
-      } else if (el.getAttribute('role') === 'textbox' || el.getAttribute('contenteditable') === 'true') {
-        el.textContent = step.value;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        filled++;
-      }
-    } else if (step.tool === 'select_option') {
-      if (el instanceof HTMLSelectElement) {
-        el.value = step.value;
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        filled++;
-      } else if (el.getAttribute('role') === 'listbox') {
-        const options = el.querySelectorAll('[role="option"]');
-        for (const opt of Array.from(options)) {
-          const dataValue = opt.getAttribute('data-value') ?? opt.textContent?.trim() ?? '';
-          if (dataValue.toLowerCase() === step.value.toLowerCase()) {
-            opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-            opt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-            opt.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-            filled++;
-            break;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled++;
+        } else if (el.getAttribute('role') === 'listbox') {
+          const options = el.querySelectorAll('[role="option"]');
+          for (const opt of Array.from(options)) {
+            const dv = opt.getAttribute('data-value') ?? opt.textContent?.trim() ?? '';
+            if (dv.toLowerCase() === step.value.toLowerCase() || dv.toLowerCase().includes(step.value.toLowerCase())) {
+              opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+              opt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+              opt.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+              filled++;
+              break;
+            }
+          }
+        } else if (el.getAttribute('role') === 'radiogroup') {
+          const options = el.querySelectorAll('[role="radio"]');
+          for (const opt of Array.from(options)) {
+            const dv = opt.getAttribute('data-value') ?? opt.textContent?.trim() ?? '';
+            if (dv.toLowerCase() === step.value.toLowerCase() || dv.toLowerCase().includes(step.value.toLowerCase())) {
+              opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+              opt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+              opt.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+              filled++;
+              break;
+            }
           }
         }
-      } else if (el.getAttribute('role') === 'radiogroup') {
-        const options = el.querySelectorAll('[role="radio"]');
-        for (const opt of Array.from(options)) {
-          const dataValue = opt.getAttribute('data-value') ?? opt.textContent?.trim() ?? '';
-          if (dataValue.toLowerCase() === step.value.toLowerCase()) {
-            opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-            opt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-            opt.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      } else if (step.tool === 'toggle') {
+        if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+          const shouldCheck = step.value === 'true' || step.value === 'yes';
+          if (el.checked !== shouldCheck) {
+            el.click();
             filled++;
-            break;
+          }
+        } else if (el.getAttribute('role') === 'checkbox') {
+          const isChecked = el.getAttribute('aria-checked') === 'true';
+          const shouldCheck = step.value === 'true' || step.value === 'yes';
+          if (isChecked !== shouldCheck) {
+            el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            filled++;
           }
         }
       }
-    } else if (step.tool === 'toggle') {
-      if (el instanceof HTMLInputElement && el.type === 'checkbox') {
-        el.checked = step.value === 'true';
-        el.dispatchEvent(new Event('click', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        filled++;
-      }
+    } catch (err) {
+      console.warn(`[Fillwright] Failed to fill ${step.field_id}:`, err);
     }
   }
 
@@ -354,36 +345,56 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
       return;
     }
 
-    if (btn) {
-      btn.textContent = 'Planning...';
+    if (btn) btn.textContent = 'Planning...';
+
+    // Try Gemini Nano via MAIN world
+    let source = 'fallback';
+    let plan: Array<{ tool: string; field_id: string; value: string; confidence: number }> = [];
+
+    try {
+      const nanoResult = await sendToMainWorld('CHECK_NANO');
+      console.log('[Fillwright] Nano status:', nanoResult?.status);
+
+      if (nanoResult?.status === 'available') {
+        if (btn) btn.textContent = 'Asking Gemini Nano...';
+        const nanoPlan = await sendToMainWorld('RUN_NANO', { schema: { fields: schema.fields }, profile });
+        if (nanoPlan?.ok && nanoPlan?.plan?.length > 0) {
+          plan = nanoPlan.plan;
+          source = 'nano';
+          console.log('[Fillwright] Gemini Nano produced plan:', plan);
+        } else {
+          console.warn('[Fillwright] Nano failed:', nanoPlan?.error);
+        }
+      }
+    } catch (err) {
+      console.warn('[Fillwright] Nano communication error:', err);
     }
 
-    const result = await generateFillPlan(schema, profile);
+    // Fallback to regex
+    if (plan.length === 0) {
+      const fallback = generateFallbackPlan(schema, profile);
+      plan = fallback.plan;
+      source = fallback.source;
+    }
 
-    console.log(`[Fillwright] Fill plan (${result.source}):`, result.plan);
+    console.log(`[Fillwright] Fill plan (${source}):`, plan);
 
-    if (result.plan.length === 0) {
+    if (plan.length === 0) {
       const fieldLabels = schema.fields.map((f) => f.label ?? f.nearbyText ?? f.name ?? f.type).join(', ');
       showNotification(
-        `Found ${schema.fields.length} fields but couldn't match. Detected: ${fieldLabels}`,
+        `Found ${schema.fields.length} fields but couldn't match any. Detected: ${fieldLabels}`,
         'error'
       );
       return;
     }
 
-    if (btn) {
-      btn.textContent = `Filling ${result.plan.length} fields...`;
-    }
+    if (btn) btn.textContent = `Filling ${plan.length} fields...`;
 
-    const filled = applyFillPlan(result.plan);
-    showNotification(`Filled ${filled}/${result.plan.length} fields (${result.source})`, 'success');
+    const filled = applyFillPlan(plan);
+    showNotification(`Filled ${filled}/${plan.length} fields (${source})`, 'success');
   } catch (err) {
     console.error('[Fillwright] Error:', err);
-    if (String(err).includes('Extension context invalidated')) {
-      showNotification('Extension was updated. Reload this page.', 'error');
-    } else {
-      showNotification(`Error: ${String(err)}`, 'error');
-    }
+    showNotification(`Error: ${String(err)}`, 'error');
   } finally {
     if (btn) {
       btn.textContent = 'Fill Form';
@@ -399,7 +410,7 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'FILL_FORM') {
     handleFill().then(() => {
-      sendResponse({ filled: true, count: 0 });
+      sendResponse({ filled: true });
     }).catch((err) => {
       sendResponse({ filled: false, error: String(err) });
     });
@@ -408,11 +419,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'TOGGLE_FILLWRIGHT') {
     enabled = msg.enabled;
-    if (enabled) {
-      injectFillwrightUI();
-    } else {
-      removeFillwrightUI();
-    }
+    if (enabled) injectFillwrightUI();
+    else removeFillwrightUI();
     sendResponse({ ok: true });
     return false;
   }

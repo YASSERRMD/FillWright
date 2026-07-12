@@ -1,58 +1,22 @@
 // Fillwright Offscreen Document
 // This runs in the page context and has access to window.LanguageModel
 
-function getSystemPrompt(): string {
-  return `You are a form-filling assistant. You map profile data to form fields.
-
-Rules:
-1. Return ONLY a JSON array of fill steps. No prose, no markdown fences.
-2. Each step: { "tool": "fill_field"|"select_option"|"toggle", "field_id": "...", "value": "...", "confidence": 0.0-1.0 }
-3. For select_option, match by visible label or value.
-4. For toggle, use "true" or "false" as value.
-5. Split full name into given/family as needed.
-6. Normalize dates to each field's pattern.
-7. Normalize country names to match select options.
-8. If confidence < 0.5, leave the field empty (omit from the plan).
-9. Do not guess. Leave empty rather than guess.
-10. Do not include fields not present in the schema.`;
-}
-
-function buildPrompt(schemaJson: string, profileJson: string): string {
-  return `Given this form schema:
-${schemaJson}
-
-And this user profile:
-${profileJson}
-
-Map profile data to form fields. Return a JSON array of fill steps.`;
-}
-
-function stripMarkdownFences(raw: string): string {
-  let cleaned = raw.trim();
-  if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-  else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-  if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-  return cleaned.trim();
-}
-
-function validateStep(step: unknown): boolean {
-  const VALID_TOOLS = new Set(['fill_field', 'select_option', 'toggle']);
-  const obj = step as Record<string, unknown>;
-  if (typeof obj !== 'object' || obj === null) return false;
-  if (typeof obj.tool !== 'string' || !VALID_TOOLS.has(obj.tool)) return false;
-  if (typeof obj.field_id !== 'string' || obj.field_id.length === 0) return false;
-  if (typeof obj.value !== 'string') return false;
-  if (typeof obj.confidence !== 'number') return false;
-  return true;
-}
+console.log('[Fillwright Offscreen] Loaded. window.LanguageModel:', typeof (window as any).LanguageModel);
+console.log('[Fillwright Offscreen] window.ai:', typeof (window as any).ai);
 
 async function checkNanoAvailability(): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const LM = (window as any).LanguageModel;
-  if (!LM) return 'unavailable';
+  if (!LM) {
+    console.log('[Fillwright Offscreen] LanguageModel not found on window');
+    return 'unavailable';
+  }
   try {
-    return await LM.availability();
-  } catch {
+    const status = await LM.availability();
+    console.log('[Fillwright Offscreen] LanguageModel status:', status);
+    return status as string;
+  } catch (err) {
+    console.error('[Fillwright Offscreen] LanguageModel error:', err);
     return 'unavailable';
   }
 }
@@ -73,29 +37,50 @@ async function runNanoPlan(
       return { ok: false, plan: [], source: 'nano', error: `Model status: ${status}` };
     }
 
-    const session = await LM.createSession({ systemPrompt: getSystemPrompt() });
-    const prompt = buildPrompt(JSON.stringify(schema), JSON.stringify(profile));
+    const SYSTEM_PROMPT = `You are a form-filling assistant. You map profile data to form fields.
+
+Rules:
+1. Return ONLY a JSON array of fill steps. No prose, no markdown fences.
+2. Each step: { "tool": "fill_field"|"select_option"|"toggle", "field_id": "...", "value": "...", "confidence": 0.0-1.0 }
+3. For select_option, match by visible label or value.
+4. For toggle, use "true" or "false" as value.
+5. Split full name into given/family as needed.
+6. Normalize dates to each field's pattern.
+7. Normalize country names to match select options.
+8. If confidence < 0.5, leave the field empty (omit from the plan).
+9. Do not guess. Leave empty rather than guess.
+10. Do not include fields not present in the schema.`;
+
+    const session = await LM.createSession({ systemPrompt: SYSTEM_PROMPT });
+    const prompt = `Given this form schema:
+${JSON.stringify(schema)}
+
+And this user profile:
+${JSON.stringify(profile)}
+
+Map profile data to form fields. Return a JSON array of fill steps.`;
+
+    console.log('[Fillwright Offscreen] Sending prompt to Gemini Nano...');
     const raw = await session.prompt(prompt);
     session.destroy();
+    console.log('[Fillwright Offscreen] Raw response:', raw);
 
-    const cleaned = stripMarkdownFences(raw);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      return { ok: false, plan: [], source: 'nano', error: 'Invalid JSON from model' };
-    }
+    let cleaned = raw.trim();
+    if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+    else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+    if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
 
+    const parsed = JSON.parse(cleaned.trim());
     if (!Array.isArray(parsed)) {
-      return { ok: false, plan: [], source: 'nano', error: 'Response is not an array' };
+      return { ok: false, plan: [], source: 'nano', error: 'Not an array' };
     }
 
-    const validSteps = (parsed as unknown[]).filter(validateStep);
-    if (validSteps.length === 0) {
-      return { ok: false, plan: [], source: 'nano', error: 'No valid steps in response' };
-    }
+    const VALID_TOOLS = new Set(['fill_field', 'select_option', 'toggle']);
+    const validSteps = parsed.filter((s: any) =>
+      VALID_TOOLS.has(s.tool) && typeof s.field_id === 'string' && typeof s.value === 'string' && typeof s.confidence === 'number'
+    );
 
-    return { ok: true, plan: validSteps as Array<Record<string, unknown>>, source: 'nano' };
+    return { ok: true, plan: validSteps, source: 'nano' };
   } catch (err) {
     return { ok: false, plan: [], source: 'nano', error: String(err) };
   }
@@ -103,6 +88,8 @@ async function runNanoPlan(
 
 // Listen for messages from background worker
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  console.log('[Fillwright Offscreen] Received message:', msg.type);
+
   if (msg.type === 'CHECK_NANO') {
     checkNanoAvailability().then((status) => {
       sendResponse({ status });
@@ -120,4 +107,4 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return false;
 });
 
-console.log('[Fillwright] Offscreen document loaded');
+console.log('[Fillwright Offscreen] Document ready');
