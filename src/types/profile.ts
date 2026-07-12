@@ -9,6 +9,7 @@ export interface Contact {
   email: string;
   phone: string;
   addresses: string[];
+  country: string;
 }
 
 export interface Documents {

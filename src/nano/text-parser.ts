@@ -28,19 +28,25 @@ function extractPhone(text: string): string {
   return cleaned[0] ?? '';
 }
 
-function extractAddress(text: string): string {
+function extractAddress(text: string): { address: string; country: string } {
   const sentences = text.split(/[.!?\n]+/);
   for (const s of sentences) {
     if (ADDRESS_KEYWORDS.test(s)) {
-      return s.trim();
+      return { address: s.trim(), country: '' };
     }
   }
   const lines = text.split('\n');
   for (const line of lines) {
     if (ADDRESS_KEYWORDS.test(line) || POSTAL_CODE_RE.test(line)) {
-      return line.trim();
+      return { address: line.trim(), country: '' };
     }
   }
+  return { address: '', country: '' };
+}
+
+function extractCountry(text: string): string {
+  const countryMatch = text.match(/(?:country(?:\s*of\s*residence)?|nation|based\s+in|located\s+in|from)[:\s]*([A-Za-z\s]{2,30})/i);
+  if (countryMatch) return (countryMatch[1] ?? '').replace(/[.,;!?]+$/, '').trim();
   return '';
 }
 
@@ -139,7 +145,8 @@ export function parseProfileText(text: string): Profile {
   const name = extractName(text);
   const email = extractEmail(text);
   const phone = extractPhone(text);
-  const address = extractAddress(text);
+  const { address } = extractAddress(text);
+  const country = extractCountry(text);
   const employment = extractEmployment(text);
   const docs = extractDocuments(text);
   const custom = extractCustom(text);
@@ -155,6 +162,7 @@ export function parseProfileText(text: string): Profile {
       email,
       phone,
       addresses: address ? [address] : [],
+      country,
     },
     documents: {
       passport: docs.passport ?? '',
@@ -180,6 +188,7 @@ export function profileToFlat(profile: Profile): Record<string, string> {
 
   flat['contact.email'] = profile.contact.email;
   flat['contact.phone'] = profile.contact.phone;
+  flat['contact.country'] = profile.contact.country;
 
   profile.contact.addresses.forEach((addr, i) => {
     flat[`contact.addresses.${i}`] = addr;
@@ -206,6 +215,7 @@ export function getExtractedSummary(profile: Profile): string[] {
   if (profile.contact.email) found.push(`Email: ${profile.contact.email}`);
   if (profile.contact.phone) found.push(`Phone: ${profile.contact.phone}`);
   if (profile.contact.addresses.length > 0) found.push(`Address: ${profile.contact.addresses[0]}`);
+  if (profile.contact.country) found.push(`Country: ${profile.contact.country}`);
   if (profile.employment.employer) found.push(`Employer: ${profile.employment.employer}`);
   if (profile.employment.jobTitle) found.push(`Job title: ${profile.employment.jobTitle}`);
   if (profile.employment.department) found.push(`Department: ${profile.employment.department}`);

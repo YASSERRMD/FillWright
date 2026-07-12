@@ -19,6 +19,7 @@ const DEFAULT_PROFILE: Profile = {
     email: '',
     phone: '',
     addresses: [],
+    country: '',
   },
   documents: {
     passport: '',
@@ -200,6 +201,7 @@ export function getFlattenedProfile(): Record<string, string> {
 
   flat['contact.email'] = currentProfile.contact.email;
   flat['contact.phone'] = currentProfile.contact.phone;
+  flat['contact.country'] = currentProfile.contact.country;
 
   currentProfile.contact.addresses.forEach((addr, i) => {
     flat[`contact.addresses.${i}`] = addr;

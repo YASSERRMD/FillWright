@@ -22,17 +22,27 @@ const AUTOCOMPLETE_MAPPINGS: AutocompleteMapping[] = [
 ];
 
 const LABEL_MAPPINGS: Array<{ patterns: RegExp[]; profileKey: string; tool: string }> = [
+  // Name
   { patterns: [/first\s*name/i], profileKey: 'identity.givenName', tool: 'fill_field' },
   { patterns: [/last\s*name/i, /family\s*name/i, /surname/i], profileKey: 'identity.familyName', tool: 'fill_field' },
   { patterns: [/full\s*name/i, /^name$/i], profileKey: 'identity.fullName', tool: 'fill_field' },
+  { patterns: [/preferred\s*name/i, /nickname/i], profileKey: 'identity.preferredName', tool: 'fill_field' },
+
+  // Contact
   { patterns: [/e-?mail/i], profileKey: 'contact.email', tool: 'fill_field' },
-  { patterns: [/phone/i, /mobile/i, /cell/i], profileKey: 'contact.phone', tool: 'fill_field' },
-  { patterns: [/address/i, /street/i], profileKey: 'contact.addresses.0', tool: 'fill_field' },
-  { patterns: [/country/i], profileKey: 'contact.country', tool: 'select_option' },
-  { patterns: [/passport/i], profileKey: 'documents.passport', tool: 'fill_field' },
-  { patterns: [/national\s*id/i, /id\s*number/i], profileKey: 'documents.nationalId', tool: 'fill_field' },
-  { patterns: [/employer/i, /company/i, /organization/i], profileKey: 'employment.employer', tool: 'fill_field' },
-  { patterns: [/job\s*title/i, /position/i, /role/i], profileKey: 'employment.jobTitle', tool: 'fill_field' },
+  { patterns: [/phone/i, /mobile/i, /cell/i, /telephone/i, /phone\s*number/i], profileKey: 'contact.phone', tool: 'fill_field' },
+  { patterns: [/address/i, /street/i, /address\s*line/i], profileKey: 'contact.addresses.0', tool: 'fill_field' },
+  { patterns: [/country/i, /country\s*of\s*residence/i, /nation/i], profileKey: 'contact.country', tool: 'select_option' },
+
+  // Documents
+  { patterns: [/passport/i, /passport\s*number/i], profileKey: 'documents.passport', tool: 'fill_field' },
+  { patterns: [/national\s*id/i, /id\s*number/i, /id\s*card/i], profileKey: 'documents.nationalId', tool: 'fill_field' },
+  { patterns: [/emirates\s*id/i], profileKey: 'documents.emiratesId', tool: 'fill_field' },
+
+  // Employment
+  { patterns: [/employer/i, /company/i, /organization/i, /workplace/i], profileKey: 'employment.employer', tool: 'fill_field' },
+  { patterns: [/job\s*title/i, /position/i, /role/i, /title/i], profileKey: 'employment.jobTitle', tool: 'fill_field' },
+  { patterns: [/department/i, /division/i], profileKey: 'employment.department', tool: 'fill_field' },
 ];
 
 function matchAutocomplete(field: FormField): AutocompleteMapping | null {
