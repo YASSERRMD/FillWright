@@ -13,12 +13,6 @@
       "js": ["content.js"],
       "css": [],
       "run_at": "document_idle"
-    },
-    {
-      "matches": ["<all_urls>"],
-      "js": ["main-world.js"],
-      "run_at": "document_start",
-      "world": "MAIN"
     }
   ],
   "background": {
