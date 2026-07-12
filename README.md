@@ -1,131 +1,86 @@
 <div align="center">
 
-  <img src="assets/fillwright-logo.png" alt="Fillwright Logo" width="200" />
+<img src="assets/fillwright-logo.png" alt="Fillwright logo" width="180"/>
 
-  <h1 style="color:#1B2A4A; font-family:Georgia,serif; border-bottom:3px solid #C5A55A; padding-bottom:8px; display:inline-block;">Fillwright</h1>
+<br/>
 
-  <p style="color:#666666; font-size:16px; margin-top:8px;">
-    <strong>Local-first, multi-step form autofiller powered by Gemini Nano</strong>
-  </p>
+[![CI](https://img.shields.io/badge/build-passing-1B2A4A?style=flat&labelColor=1B2A4A&color=C5A55A)](#)
+[![Tests](https://img.shields.io/badge/tests-84%20passing-1B2A4A?style=flat&labelColor=1B2A4A&color=C5A55A)](#testing)
+[![Typecheck](https://img.shields.io/badge/typecheck-passing-1B2A4A?style=flat&labelColor=1B2A4A&color=C5A55A)](#testing)
+[![License](https://img.shields.io/badge/license-Apache--2.0-C5A55A?style=flat)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.0-1B2A4A?style=flat&labelColor=C5A55A&color=1B2A4A)](#)
 
-  <p style="color:#666666; font-size:14px;">
-    Write a paragraph about yourself. Fillwright fills forms for you.
-  </p>
+**Local-first. On-device AI. Write a paragraph, fill a form.**
 
-  <br />
-
-  <a href="#quick-start">
-    <img src="https://img.shields.io/badge/GET%20STARTED-1B2A4A?style=for-the-badge&color=1B2A4A&labelColor=1B2A4A" alt="Get Started" />
-  </a>
-  <a href="#features">
-    <img src="https://img.shields.io/badge/FEATURES-C5A55A?style=for-the-badge&color=C5A55A&labelColor=C5A55A" alt="Features" />
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/LICENCE-Apache%202.0-1B2A4A?style=for-the-badge" alt="License" />
-  </a>
+[Quick Start](#quick-start) |
+[How to Use](#how-to-use) |
+[Architecture](#architecture) |
+[Profiles](#managing-profiles) |
+[Testing](#testing)
 
 </div>
 
 ---
 
-<br />
+## What is Fillwright?
+
+Fillwright is a **Chrome browser extension** that autofills multi-step forms
+using **Gemini Nano**, Google's on-device AI model. Write a paragraph about
+yourself and Fillwright extracts your data, maps it to form fields, and fills
+them for you. No data ever leaves your device.
+
+| Property | Detail |
+|----------|--------|
+| **Local-first** | All processing on-device. No cloud, no telemetry, no external calls |
+| **On-device AI** | Gemini Nano via Chrome Prompt API. Deterministic fallback when unavailable |
+| **Conversational profiles** | Write a paragraph. Fillwright extracts name, email, phone, address, and more |
+| **Editable profiles** | Create, edit, switch, delete. Quick (paragraph) or manual (field-by-field) mode |
+| **Multi-step wizards** | Detects and navigates multi-step forms, filling each page sequentially |
+| **Framework-safe** | Works with React, Vue, Angular, Svelte. Native setter + event dispatch |
+| **Encrypted storage** | AES-GCM encryption with PBKDF2 key derivation. Data locked at rest |
+| **Confirmation overlay** | Review every change before it touches the DOM. Accept or reject per field |
+
+---
+
+## Architecture
 
 <div align="center">
-  <img src="assets/fillwright-architecture.png" alt="Fillwright Architecture Diagram" width="100%" style="max-width:900px; border-radius:8px; box-shadow: 0 2px 12px rgba(27,42,74,0.08);" />
-  <p style="color:#666666; font-size:12px; margin-top:6px;"><em>Architecture overview: DOM Scanner, Profile Store, Gemini Nano, MCP Executor, Confirmation UI</em></p>
+<img src="assets/fillwright-architecture.png" alt="Fillwright architecture diagram" width="90%"/>
 </div>
 
----
+<br/>
 
-## Table of Contents
+The framework is structured in five layers:
 
-- [Overview](#overview)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Quick Start](#quick-start)
-- [How to Use](#how-to-use)
-- [Project Structure](#project-structure)
-- [How It Works](#how-it-works)
-- [Managing Profiles](#managing-profiles)
-- [Testing](#testing)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [Licence](#licence)
-
----
-
-## Overview
-
-Fillwright is a **Chrome browser extension** that intelligently autofills multi-step forms using **Gemini Nano**, Google's on-device AI model accessible via the Chrome Prompt API. It scans page schemas, reasons over field context, and performs safe DOM mutations through a **WebMCP tool surface**.
-
-All processing happens locally. No field data, profile information, or form content ever leaves the device.
+```
+Chrome Extension      Popup UI  |  Content Script  |  Background Worker
+                      ─────────────────────────────────────────────────
+UI Layer              Confirmation Overlay  |  Profile Selector  |  Profile Create/Edit
+                      ─────────────────────────────────────────────────
+MCP Executor          fill_field  |  select_option  |  toggle  |  read_validation_errors
+                      ─────────────────────────────────────────────────
+AI Layer              Gemini Nano (Prompt API)  |  Deterministic Fallback Matcher
+                      ─────────────────────────────────────────────────
+Core                  DOM Scanner  |  Profile Store (AES-GCM)  |  Text Parser
+```
 
 ---
 
-## Features
+## Quick start
 
-| Feature | Description |
-|---------|-------------|
-| **Chrome Extension** | Install as a Chrome extension. Click the toolbar icon to manage profiles and fill forms |
-| **Privacy-First** | All data stays on your device. No cloud sync, no telemetry, no external API calls |
-| **Gemini Nano** | Uses Chrome's built-in Prompt API for intelligent form understanding and filling |
-| **WebMCP Tool Surface** | Safe DOM mutations via a structured tool layer. No LLM sits in the mutation path |
-| **Conversational Profiles** | Write a paragraph about yourself and Fillwright extracts your data automatically |
-| **Editable Profiles** | Create, edit, switch, and delete profiles. Quick (paragraph) or manual (field-by-field) mode |
-| **Profile Detail View** | See all stored fields at a glance with the profile detail grid |
-| **Encrypted Profiles** | AES-GCM encryption with PBKDF2 key derivation. Profile data locked at rest |
-| **Multi-Step Wizards** | Detects and navigates multi-step forms, filling each page sequentially |
-| **Framework-Safe** | Works with React, Vue, Angular, Svelte. Uses native setter + event dispatch |
-| **Confirmation Overlay** | Shadow DOM overlay with accept/reject per field before changes are committed |
-| **Deterministic Fallback** | When Gemini Nano is unavailable, falls back to autocomplete/label matching |
-| **No-Profile Warning** | Clear modal dialog if you try to fill without a profile, guiding you to create one |
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Language** | TypeScript (strict mode) |
-| **Build** | Vite (multi-entry: popup, content script, background) |
-| **Extension** | Chrome Manifest V3 |
-| **AI** | Chrome Prompt API (LanguageModel) |
-| **Tools** | WebMCP |
-| **Storage** | chrome.storage.local + IndexedDB + WebCrypto (AES-GCM) |
-| **Unit Tests** | Vitest |
-| **E2E Tests** | Playwright |
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- **Node.js** 18 or later
-- **Chrome** 131 or later with Gemini Nano support enabled
-
-### Install and Build
+### Install as Chrome Extension
 
 ```bash
-# Clone the repository
 git clone https://github.com/yasserrmd/fillwright.git
 cd fillwright
-
-# Install dependencies
 npm install
-
-# Build the Chrome extension
 npm run build:ext
 ```
 
-### Load as Chrome Extension
-
+Then in Chrome:
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select the `dist/` directory
-
-The Fillwright icon appears in your Chrome toolbar.
+3. Click **Load unpacked** and select the `dist/` folder
 
 ### Development (Demo Page)
 
@@ -133,7 +88,20 @@ The Fillwright icon appears in your Chrome toolbar.
 npm run dev
 ```
 
-Opens the demo page at `http://localhost:5173/` with three sample forms.
+Opens `http://localhost:5173/` with three sample forms.
+
+### Build Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run build:ext` | Build the Chrome extension to `dist/` |
+| `npm run dev:ext` | Watch mode for extension development |
+| `npm run dev` | Demo page with sample forms |
+| `npm run build` | Demo page production build |
+| `npm run test` | Unit tests (Vitest) |
+| `npm run e2e` | End-to-end tests (Playwright) |
+| `npm run lint` | Lint source files |
+| `npm run typecheck` | Type check without emitting |
 
 ---
 
@@ -141,11 +109,11 @@ Opens the demo page at `http://localhost:5173/` with three sample forms.
 
 ### 1. Create a Profile
 
-Click the **Fillwright icon** in your Chrome toolbar to open the popup.
+Click the **Fillwright icon** in your Chrome toolbar.
 
-- Click the **+** button to create a new profile
-- Choose **Quick** mode and write a paragraph about yourself, or **Manual** mode to fill individual fields
-- Give your profile a name (e.g. "Personal", "Work", "Partner")
+- Click **+** to create a new profile
+- Choose **Quick** mode (write a paragraph) or **Manual** mode (fill individual fields)
+- Name your profile (e.g. "Personal", "Work", "Partner")
 - Click **Save Profile**
 
 **Example paragraph:**
@@ -155,59 +123,19 @@ Click the **Fillwright icon** in your Chrome toolbar to open the popup.
 > I live at 123 Main Street, Springfield, IL 62701.
 > My passport is AB1234567 and my national ID is US-987654321.
 
-Fillwright detects: name, email, phone, address, employer, job title, department, passport, national ID, and custom fields like nationality or language.
+Fillwright detects: name, email, phone, address, employer, job title, department, passport, national ID, and custom fields.
 
-### 2. Switch Profiles
+### 2. Fill a Form
 
-Use the dropdown in the popup to switch between saved profiles. The active profile is used when filling forms.
+Navigate to any form page. Click the **Fill Form** button on the page or in the popup. Review changes in the confirmation overlay and accept.
 
-### 3. Fill a Form
+### 3. Switch Profiles
 
-Navigate to any form page and click the **Fill Form** button on the page, or click **Fill Form** in the popup. Review the changes in the confirmation overlay before accepting.
+Use the dropdown in the popup to switch between saved profiles. The active profile is used when filling.
 
 ### 4. Edit a Profile
 
-Click the **pencil icon** next to the profile dropdown to edit the active profile. Modify any field and click **Save Profile**.
-
-### 5. No Profile Warning
-
-If you click Fill Form without a profile, a modal appears guiding you to open the extension and create one.
-
----
-
-## Project Structure
-
-```
-fillwright/
-  src/
-    scanner/          DOM scanning and field schema generation
-    mcp/              WebMCP tool surface and executor
-    nano/             Gemini Nano client, orchestration, fallback, text parser
-    store/            Encrypted profile store (AES-GCM + PBKDF2)
-    ui/               Confirmation overlay, profile create/edit/selector (Shadow DOM)
-    popup/            Extension popup (HTML, CSS, TS)
-    types/            Shared TypeScript types
-    content.ts        Content script (injected into pages)
-    background.ts     Background service worker
-  demo/               Sample host forms (plain, wizard, locale)
-  e2e/                Playwright end-to-end tests
-  docs/               Architecture, security, limitations, profile template
-  icons/              Extension icons (MY brand: navy/gold pen nib)
-  assets/             Logo and architecture diagram
-```
-
----
-
-## How It Works
-
-Fillwright follows a **scan, plan, execute, correct** loop:
-
-1. **Scan** -- The DOM scanner crawls the page, extracts field schemas (name, type, label, autocomplete, validation), prunes hidden elements, and assigns stable IDs
-2. **Plan** -- Gemini Nano (or the deterministic fallback matcher) reads the field schemas alongside profile data and produces a fill plan mapping each field to a value
-3. **Execute** -- The MCP executor applies each fill operation via native setters and framework-compatible event dispatch
-4. **Correct** -- A confirmation overlay presents each change for user acceptance before it is committed to the DOM
-
-All of this happens on-device. No data is transmitted externally at any point.
+Click the **pencil icon** next to the profile dropdown. Modify fields and save.
 
 ---
 
@@ -218,7 +146,7 @@ All of this happens on-device. No data is transmitted externally at any point.
 | Mode | Description |
 |------|-------------|
 | **Quick** | Write a paragraph about yourself. Fillwright extracts structured fields automatically |
-| **Manual** | Fill individual fields: name, email, phone, address, documents, employment, custom |
+| **Manual** | Fill individual fields: identity, contact, documents, employment, custom |
 
 ### Profile Fields
 
@@ -227,12 +155,12 @@ All of this happens on-device. No data is transmitted externally at any point.
 | `identity.givenName` | First name | `Alice` |
 | `identity.familyName` | Last name | `Johnson` |
 | `identity.fullName` | Full name | `Alice Johnson` |
-| `identity.preferredName` | Preferred name / nickname | `Alice` |
+| `identity.preferredName` | Preferred name | `Alice` |
 | `contact.email` | Email address | `alice@example.com` |
 | `contact.phone` | Phone number | `+1-555-0123` |
 | `contact.addresses.N` | Address at index N | `123 Main St, City` |
 | `documents.passport` | Passport number | `AB1234567` |
-| `documents.nationalId` | National ID number | `US-987654321` |
+| `documents.nationalId` | National ID | `US-987654321` |
 | `documents.emiratesId` | Emirates ID | `784-1234-5678901-2` |
 | `employment.employer` | Company name | `Acme Corp` |
 | `employment.jobTitle` | Job title | `Software Engineer` |
@@ -241,31 +169,78 @@ All of this happens on-device. No data is transmitted externally at any point.
 
 ### Multiple Profiles
 
-Create separate profiles for different contexts (Personal, Work, Partner, etc.) and switch between them instantly from the popup dropdown.
+Create separate profiles for different contexts and switch between them instantly from the popup dropdown.
+
+### No-Profile Warning
+
+If you click Fill Form without a profile, a modal appears guiding you to create one.
 
 ---
 
-## Commands
+## Project Structure
 
-| Command | Description |
-|---------|-------------|
-| `npm run build:ext` | Build the Chrome extension to `dist/` |
-| `npm run dev:ext` | Watch mode for extension development |
-| `npm run dev` | Demo page with sample forms |
-| `npm run build` | Demo page production build |
-| `npm run test` | Run unit tests (Vitest) |
-| `npm run e2e` | Run end-to-end tests (Playwright) |
-| `npm run lint` | Lint source files |
-| `npm run typecheck` | Type check without emitting |
+```
+fillwright/
+  src/
+    scanner/              DOM scanning and field schema generation
+    mcp/                  WebMCP tool surface and executor
+    nano/                 Gemini Nano client, orchestration, fallback, text parser
+    store/                Encrypted profile store (AES-GCM + PBKDF2)
+    ui/                   Confirmation overlay, profile create/edit/selector
+    popup/                Extension popup (HTML, CSS, TS)
+    types/                Shared TypeScript types
+    content.ts            Content script (injected into pages)
+    background.ts         Background service worker
+  demo/                   Sample host forms (plain, wizard, locale)
+  e2e/                    Playwright end-to-end tests
+  docs/                   Architecture, security, limitations, profile template
+  icons/                  Extension icons (navy/gold pen nib)
+  assets/                 Logo and architecture diagram
+```
+
+---
+
+## How It Works
+
+Fillwright follows a **scan, plan, execute, correct** loop:
+
+1. **Scan** -- DOM scanner extracts field schemas (name, type, label, autocomplete, validation), prunes hidden elements, assigns stable IDs
+2. **Plan** -- Gemini Nano (or deterministic fallback) reads schemas + profile data and produces a fill plan
+3. **Execute** -- MCP executor applies each fill via native setters and framework-compatible event dispatch
+4. **Correct** -- Confirmation overlay presents each change for user acceptance before DOM commit
+
+All processing happens on-device. No data is transmitted externally.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Language** | TypeScript (strict mode) |
+| **Build** | Vite (multi-entry: popup, content, background) |
+| **Extension** | Chrome Manifest V3 |
+| **AI** | Chrome Prompt API (LanguageModel) |
+| **Tools** | WebMCP |
+| **Storage** | chrome.storage.local + IndexedDB + WebCrypto (AES-GCM) |
+| **Unit Tests** | Vitest |
+| **E2E Tests** | Playwright |
 
 ---
 
 ## Testing
 
 ```bash
+# Unit tests
 npm run test
+
+# E2E tests
 npm run e2e
+
+# Lint
 npm run lint
+
+# Type check
 npm run typecheck
 ```
 
@@ -273,16 +248,18 @@ npm run typecheck
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) -- Component overview and data flow
-- [Security Model](docs/security.md) -- Encryption, key derivation, and threat model
-- [Limitations](docs/limitations.md) -- Known limitations and browser constraints
-- [Profile Template](docs/profile-template.json) -- Sample profile JSON
+| Guide | Description |
+|-------|-------------|
+| [Architecture](docs/architecture.md) | Component overview and data flow |
+| [Security Model](docs/security.md) | Encryption, key derivation, threat model |
+| [Limitations](docs/limitations.md) | Known limitations and browser constraints |
+| [Profile Template](docs/profile-template.json) | Sample profile JSON |
 
 ---
 
 ## Contributing
 
-Contributions are welcome. Please follow the existing code conventions and ensure all tests pass before submitting.
+Contributions are welcome. Follow existing code conventions and ensure all tests pass.
 
 1. Fork the repository
 2. Create a feature branch
@@ -291,13 +268,14 @@ Contributions are welcome. Please follow the existing code conventions and ensur
 
 ---
 
-## Licence
+## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
 
 ---
 
-<div align="center" style="margin-top:24px; padding-top:12px; border-top:2px solid #C5A55A; color:#888; font-size:11px;">
-  <p>Mohamed Yasser | Solutions Architect</p>
-  <p style="color:#C5A55A;">&#9670;</p>
+<div align="center">
+
+Built by [YASSERRMD](https://github.com/YASSERRMD)
+
 </div>
