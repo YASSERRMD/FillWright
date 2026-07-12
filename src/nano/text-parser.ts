@@ -2,9 +2,6 @@ import type { Profile } from '../types/profile';
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 const PHONE_RE = /\+?\d[\d\s()-]{6,}\d/g;
-const ADDRESS_KEYWORDS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|way|court|ct|place|pl|circle|cir|trail|trl)\b/i;
-const POSTAL_CODE_RE = /\b\d{4,6}\b/;
-const NAME_PREFIXES = /^(?:i am|my name is|name:|i'm)\s+/i;
 
 function findAll(text: RegExp, input: string): string[] {
   const matches: string[] = [];
@@ -16,8 +13,7 @@ function findAll(text: RegExp, input: string): string[] {
 }
 
 function extractEmail(text: string): string {
-  const emails = findAll(EMAIL_RE, text);
-  return emails[0] ?? '';
+  return findAll(EMAIL_RE, text)[0] ?? '';
 }
 
 function extractPhone(text: string): string {
@@ -28,46 +24,24 @@ function extractPhone(text: string): string {
   return cleaned[0] ?? '';
 }
 
-function extractAddress(text: string): { address: string; country: string } {
-  const sentences = text.split(/[.!?\n]+/);
-  for (const s of sentences) {
-    if (ADDRESS_KEYWORDS.test(s)) {
-      return { address: s.trim(), country: '' };
-    }
-  }
-  const lines = text.split('\n');
-  for (const line of lines) {
-    if (ADDRESS_KEYWORDS.test(line) || POSTAL_CODE_RE.test(line)) {
-      return { address: line.trim(), country: '' };
-    }
-  }
-  return { address: '', country: '' };
-}
-
-function extractCountry(text: string): string {
-  const countryMatch = text.match(/(?:country(?:\s*of\s*residence)?|nation|based\s+in|located\s+in|from)[:\s]*([A-Za-z\s]{2,30})/i);
-  if (countryMatch) return (countryMatch[1] ?? '').replace(/[.,;!?]+$/, '').trim();
-  return '';
-}
-
 function extractName(text: string): { given: string; family: string; full: string } {
-  const nameMatch = text.match(NAME_PREFIXES);
-  if (nameMatch) {
-    const rest = text.slice(nameMatch[0].length).trim();
-    const end = rest.search(/[.!?\n,;]/);
-    const name = end > 0 ? rest.slice(0, end).trim() : rest.split(/\s+/).slice(0, 3).join(' ');
+  // Try explicit patterns first: "I am X", "My name is X", "Name: X"
+  const explicitMatch = text.match(
+    /(?:i\s+am|my\s+name\s+is|i'm|name[:\s]+)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/i
+  );
+  if (explicitMatch) {
+    const name = (explicitMatch[1] ?? '').trim();
     return parseFullName(name);
   }
 
+  // Try first sentence if it looks like a name
   const sentences = text.split(/[.!?\n]+/);
   const first = sentences[0]?.trim() ?? '';
   const words = first.split(/\s+/);
   if (words.length >= 2 && words.length <= 4) {
-    const w0 = words[0] ?? '';
-    const w1 = words[1] ?? '';
-    const isName = /^[A-Z]/.test(w0) && /^[A-Z]/.test(w1);
-    if (isName) {
-      return parseFullName(words.slice(0, 3).join(' '));
+    const allCaps = words.every((w) => /^[A-Z]/.test(w));
+    if (allCaps) {
+      return parseFullName(words.join(' '));
     }
   }
 
@@ -92,23 +66,58 @@ function extractEmployment(text: string): { employer: string; jobTitle: string; 
   let jobTitle = '';
   let department = '';
 
-  const empMatch = text.match(/(?:i work|works|working)\s+(?:at|for)\s+([A-Za-z0-9.&]+)/i);
-  if (empMatch) employer = (empMatch[1] ?? '').replace(/[.,;!?]+$/, '').trim();
+  // Employer: "working at X", "works at X", "work at X", "employed at X"
+  const empMatch = text.match(
+    /(?:working|works|work|employed|hired)\s+(?:at|for)\s+(?:the\s+)?([A-Za-z][A-Za-z0-9.\s&]+?)(?:\s*,|\s*\.|\s+as\b|\s+where|\s+in\b|\s+and\b|$)/i
+  );
+  if (empMatch) {
+    employer = (empMatch[1] ?? '').replace(/[.,;!?]+$/, '').trim();
+  }
 
-  const titleMatch = text.match(/(?:i(?:'m| am)\s+(?:a|an|the)?\s*)([A-Za-z\s]+?)(?:\s+(?:at|for|in)\s)|(?:job(?:title)?:|position:|role:)\s*([^,.\n]+)/i);
-  if (titleMatch) jobTitle = ((titleMatch[1] ?? titleMatch[2]) ?? '').trim();
+  // Job title: "as a X", "as an X", "working as X", "job title: X", "position: X"
+  const titleMatch = text.match(
+    /(?:working\s+)?as\s+(?:a|an|the)?\s*([A-Za-z][A-Za-z\s]+?)(?:\s+at\b|\s+for\b|\s+in\b|\s*,|\s*\.|$)/i
+  );
+  if (titleMatch) {
+    jobTitle = (titleMatch[1] ?? '').replace(/[.,;!?]+$/, '').trim();
+  }
 
-  const deptMatch = text.match(/(?:department:?\s*)([^,.\n]+)/i)
-    ?? text.match(/in\s+(?:the\s+)?(\w+)\s+department/i);
-  if (deptMatch) department = (deptMatch[1] ?? '').trim();
+  if (!jobTitle) {
+    const titleMatch2 = text.match(/(?:job\s*title|position|role)[:\s]+([A-Za-z][A-Za-z\s]+?)(?:\s*,|\s*\.|$)/i);
+    if (titleMatch2) {
+      jobTitle = (titleMatch2[1] ?? '').replace(/[.,;!?]+$/, '').trim();
+    }
+  }
 
-  const workLine = text.match(/(?:work(?:ing)?|works)\s+(?:at|for)\s+([A-Za-z0-9.&]+)\s+(?:as|in)\s+(?:a|an|the)?\s*([A-Za-z\s]+?)(?:\s+(?:at|for|in)|[,.]|$)/i);
-  if (workLine) {
-    if (!employer) employer = (workLine[1] ?? '').replace(/[.,;!?]+$/, '').trim();
-    if (!jobTitle) jobTitle = (workLine[2] ?? '').trim();
+  // Department: "in the X department", "department: X"
+  const deptMatch = text.match(/(?:in\s+(?:the\s+)?)(\w+)\s+department/i)
+    ?? text.match(/department[:\s]+([A-Za-z][A-Za-z\s]+?)(?:\s*,|\s*\.|$)/i);
+  if (deptMatch) {
+    department = (deptMatch[1] ?? '').replace(/[.,;!?]+$/, '').trim();
   }
 
   return { employer, jobTitle, department };
+}
+
+function extractAddress(text: string): { address: string; country: string } {
+  const addressKeywords = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|way|court|ct|place|pl|circle|cir|trail|trl)\b/i;
+
+  const sentences = text.split(/[.!?\n]+/);
+  for (const s of sentences) {
+    if (addressKeywords.test(s)) {
+      return { address: s.trim(), country: '' };
+    }
+  }
+
+  return { address: '', country: '' };
+}
+
+function extractCountry(text: string): string {
+  const countryMatch = text.match(
+    /(?:country(?:\s+of\s+residence)?|nation|based\s+in|located\s+in|from|living\s+in)[:\s]*([A-Za-z][A-Za-z\s]{1,30}?)(?:\s*,|\s*\.|\s+where|\s+and\b|$)/i
+  );
+  if (countryMatch) return (countryMatch[1] ?? '').replace(/[.,;!?]+$/, '').trim();
+  return '';
 }
 
 function extractDocuments(text: string): Record<string, string> {
@@ -135,7 +144,7 @@ function extractCustom(text: string): Record<string, string> {
   const natMatch = text.match(/(?:nationality:?\s*)([^,.\n]+)/i);
   if (natMatch) custom.nationality = (natMatch[1] ?? '').trim();
 
-  const dobMatch = text.match(/(?:dob|date of birth|born|birthday)[:\s]*(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})/i);
+  const dobMatch = text.match(/(?:dob|date\s+of\s+birth|born|birthday)[:\s]*(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})/i);
   if (dobMatch) custom.dateOfBirth = dobMatch[1] ?? '';
 
   return custom;
@@ -145,8 +154,8 @@ export function parseProfileText(text: string): Profile {
   const name = extractName(text);
   const email = extractEmail(text);
   const phone = extractPhone(text);
-  const { address } = extractAddress(text);
-  const country = extractCountry(text);
+  const { address, country } = extractAddress(text);
+  const extractedCountry = extractCountry(text) || country;
   const employment = extractEmployment(text);
   const docs = extractDocuments(text);
   const custom = extractCustom(text);
@@ -162,7 +171,7 @@ export function parseProfileText(text: string): Profile {
       email,
       phone,
       addresses: address ? [address] : [],
-      country,
+      country: extractedCountry,
     },
     documents: {
       passport: docs.passport ?? '',
