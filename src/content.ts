@@ -15,6 +15,53 @@ function getProfileFromStorage(): Promise<Record<string, string>> {
   });
 }
 
+function showNotification(message: string, type: 'info' | 'error' | 'success'): void {
+  const existing = document.getElementById('fillwright-notification');
+  if (existing) existing.remove();
+
+  const colors = {
+    info: { bg: '#1B2A4A', border: '#1B2A4A' },
+    error: { bg: '#d93025', border: '#d93025' },
+    success: { bg: '#1B2A4A', border: '#C5A55A' },
+  };
+
+  const div = document.createElement('div');
+  div.id = 'fillwright-notification';
+  div.style.cssText = `
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    background: ${colors[type].bg};
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 2147483646;
+    max-width: 320px;
+    border-left: 4px solid ${colors[type].border};
+    animation: fillwright-slide-in 0.3s ease;
+  `;
+  div.textContent = message;
+
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes fillwright-slide-in {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  `;
+  document.head.appendChild(style);
+  document.body.appendChild(div);
+
+  setTimeout(() => {
+    div.style.transition = 'opacity 0.3s';
+    div.style.opacity = '0';
+    setTimeout(() => div.remove(), 300);
+  }, 4000);
+}
+
 function showNoProfileOverlay(): void {
   if (document.getElementById('fillwright-no-profile')) return;
 
@@ -24,10 +71,9 @@ function showNoProfileOverlay(): void {
 
   const backdrop = document.createElement('div');
   backdrop.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);';
-  backdrop.addEventListener('click', () => host.remove());
 
   const dialog = document.createElement('div');
-  dialog.style.cssText = 'background:white;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:400px;width:90%;padding:24px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;';
+  dialog.style.cssText = 'background:white;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:400px;width:90%;padding:24px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;position:relative;z-index:1;';
 
   dialog.innerHTML = `
     <div style="width:56px;height:56px;background:#FFF3CD;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
@@ -49,8 +95,9 @@ function showNoProfileOverlay(): void {
   host.appendChild(dialog);
   document.body.appendChild(host);
 
-  dialog.querySelector('#fillwright-no-profile-close')?.addEventListener('click', () => host.remove());
-  backdrop.addEventListener('click', () => host.remove());
+  const close = () => host.remove();
+  dialog.querySelector('#fillwright-no-profile-close')?.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
 }
 
 function injectFillwrightUI(): void {
@@ -75,11 +122,11 @@ function injectFillwrightUI(): void {
     z-index: 2147483646;
     font-family: Georgia, serif;
     letter-spacing: 0.5px;
-    transition: opacity 0.2s;
+    transition: all 0.2s;
   `;
-  btn.addEventListener('mouseenter', () => { btn.style.opacity = '0.85'; });
-  btn.addEventListener('mouseleave', () => { btn.style.opacity = '1'; });
-  btn.addEventListener('click', () => handleFill());
+  btn.addEventListener('mouseenter', () => { btn.style.background = '#0F1B33'; });
+  btn.addEventListener('mouseleave', () => { btn.style.background = '#1B2A4A'; });
+  btn.addEventListener('click', () => handleFill(btn));
   document.body.appendChild(btn);
 }
 
@@ -87,61 +134,91 @@ function removeFillwrightUI(): void {
   document.getElementById('fillwright-ext-btn')?.remove();
 }
 
-async function handleFill(): Promise<void> {
+async function handleFill(btn?: HTMLButtonElement): Promise<void> {
   if (!enabled) return;
 
-  const profile = await getProfileFromStorage();
-
-  if (Object.keys(profile).length === 0) {
-    showNoProfileOverlay();
-    return;
+  if (btn) {
+    btn.textContent = 'Scanning...';
+    btn.style.background = '#C5A55A';
+    btn.style.color = '#1B2A4A';
+    btn.disabled = true;
   }
 
-  const schema = scanPage();
-  console.log(`[Fillwright] Scanned ${schema.fields.length} fields`);
+  try {
+    const profile = await getProfileFromStorage();
 
-  const result = await generateFillPlan(schema, profile);
+    if (Object.keys(profile).length === 0) {
+      showNoProfileOverlay();
+      return;
+    }
 
-  if (!result.ok) {
-    console.error('[Fillwright] Failed to generate plan:', result.error);
-    return;
+    const schema = scanPage();
+    console.log(`[Fillwright] Scanned ${schema.fields.length} fields:`, schema.fields);
+
+    if (schema.fields.length === 0) {
+      showNotification('No form fields found on this page.', 'error');
+      return;
+    }
+
+    const result = await generateFillPlan(schema, profile);
+
+    if (!result.ok) {
+      showNotification(`Error: ${result.error}`, 'error');
+      return;
+    }
+
+    console.log(`[Fillwright] Fill plan (${result.source}):`, result.plan);
+
+    if (result.plan.length === 0) {
+      const fieldTypes = schema.fields.map((f) => `${f.label ?? f.name ?? f.autocomplete ?? f.type}`).join(', ');
+      showNotification(
+        `Found ${schema.fields.length} fields but couldn't match any to your profile. Fields: ${fieldTypes}`,
+        'error'
+      );
+      return;
+    }
+
+    const diffItems = result.plan.map((step) => {
+      const field = schema.fields.find((f) => f.field_id === step.field_id);
+      return {
+        field_id: step.field_id,
+        label: field?.label ?? field?.name ?? step.field_id,
+        oldValue: field?.currentValue ?? '',
+        newValue: step.value,
+        confidence: step.confidence,
+        accepted: true,
+      };
+    });
+
+    showConfirmation({
+      mode: 'review-before-fill',
+      items: diffItems,
+      onConfirm: (accepted) => {
+        for (const item of accepted) {
+          const tool = result.plan.find((s) => s.field_id === item.field_id)?.tool ?? 'fill_field';
+          execute(tool as 'fill_field' | 'select_option' | 'toggle', {
+            field_id: item.field_id,
+            value: item.newValue,
+            state: item.newValue === 'true',
+          });
+        }
+        showNotification(`Filled ${accepted.length} fields.`, 'success');
+      },
+      onCancel: () => {
+        showNotification('Fill cancelled.', 'info');
+      },
+    });
+  } catch (err) {
+    console.error('[Fillwright] Error:', err);
+    showNotification(`Error: ${String(err)}`, 'error');
+  } finally {
+    if (btn) {
+      btn.textContent = 'Fill Form';
+      btn.style.background = '#1B2A4A';
+      btn.style.color = 'white';
+      btn.disabled = false;
+    }
   }
-
-  if (result.plan.length === 0) {
-    console.log('[Fillwright] No fields to fill');
-    return;
-  }
-
-  const diffItems = result.plan.map((step) => {
-    const field = schema.fields.find((f) => f.field_id === step.field_id);
-    return {
-      field_id: step.field_id,
-      label: field?.label ?? step.field_id,
-      oldValue: field?.currentValue ?? '',
-      newValue: step.value,
-      confidence: step.confidence,
-      accepted: true,
-    };
-  });
-
-  showConfirmation({
-    mode: 'review-before-fill',
-    items: diffItems,
-    onConfirm: (accepted) => {
-      for (const item of accepted) {
-        const tool = result.plan.find((s) => s.field_id === item.field_id)?.tool ?? 'fill_field';
-        execute(tool as 'fill_field' | 'select_option' | 'toggle', {
-          field_id: item.field_id,
-          value: item.newValue,
-          state: item.newValue === 'true',
-        });
-      }
-      console.log(`[Fillwright] Done. ${accepted.length} fields filled.`);
-    },
-    onCancel: () => {
-      console.log('[Fillwright] Cancelled by user');
-    },
-  });
 }
 
 // Listen for messages from popup
