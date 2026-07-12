@@ -29,6 +29,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'GET_PROFILE') {
+    chrome.storage.local.get(['profiles', 'activeProfile'], (data) => {
+      const profiles = (data.profiles ?? {}) as Record<string, Record<string, string>>;
+      const active = (data.activeProfile as string) ?? '';
+      sendResponse({ profile: profiles[active] ?? {} });
+    });
+    return true;
+  }
+
   if (msg.type === 'FILL_FORM') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];

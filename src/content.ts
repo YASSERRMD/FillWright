@@ -7,10 +7,8 @@ let enabled = true;
 
 function getProfileFromStorage(): Promise<Record<string, string>> {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['profiles', 'activeProfile'], (data) => {
-      const profiles = (data.profiles ?? {}) as Record<string, Record<string, string>>;
-      const active = (data.activeProfile as string) ?? '';
-      resolve(profiles[active] ?? {});
+    chrome.runtime.sendMessage({ type: 'GET_PROFILE' }, (response) => {
+      resolve(response?.profile ?? {});
     });
   });
 }
