@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ConfirmationOverlay, showConfirmation, removeOverlay } from './confirmation';
-import type { DiffItem } from '../types';
+import type { DiffItem } from './types';
 
 function createTestItems(): DiffItem[] {
   return [

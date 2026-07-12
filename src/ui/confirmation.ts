@@ -400,24 +400,25 @@ export class ConfirmationOverlay {
   }
 
   private setupFocusTrap(): void {
-    this.shadow.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
+    this.shadow.addEventListener('keydown', (e: Event) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Escape') {
         this.cancel();
         return;
       }
 
-      if (e.key === 'Tab') {
+      if (ke.key === 'Tab') {
         const first = this.focusableElements[0];
         const last = this.focusableElements[this.focusableElements.length - 1];
 
-        if (e.shiftKey) {
+        if (ke.shiftKey) {
           if (this.shadow.activeElement === first) {
-            e.preventDefault();
+            ke.preventDefault();
             last?.focus();
           }
         } else {
           if (this.shadow.activeElement === last) {
-            e.preventDefault();
+            ke.preventDefault();
             first?.focus();
           }
         }
