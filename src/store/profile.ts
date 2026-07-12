@@ -1,6 +1,12 @@
 import type { Profile, ProfilePath } from '../types/profile';
 import { encrypt, decrypt, encryptedDataToBase64, base64ToEncryptedData } from './crypto';
-import { saveToDB, loadFromDB, deleteFromDB } from './db';
+import {
+  saveProfileToDB,
+  loadProfileFromDB,
+  deleteProfileFromDB,
+  listProfileNames,
+  getActiveProfileName,
+} from './db';
 
 const DEFAULT_PROFILE: Profile = {
   identity: {
@@ -29,6 +35,7 @@ const DEFAULT_PROFILE: Profile = {
 
 let unlocked = false;
 let currentProfile: Profile | null = null;
+let currentProfileName = 'default';
 let idleTimeout: ReturnType<typeof setTimeout> | null = null;
 let idleTimeoutMs = 5 * 60 * 1000;
 
@@ -72,13 +79,21 @@ function getPathValue(obj: Record<string, unknown>, path: string): unknown {
   return current;
 }
 
-export async function unlock(_passphrase: string): Promise<boolean> {
+export async function unlock(_passphrase: string, profileName?: string): Promise<boolean> {
   try {
+    let name = profileName ?? 'default';
+    try {
+      name = profileName ?? (await getActiveProfileName());
+    } catch {
+      // IndexedDB not available, use default
+    }
+    currentProfileName = name;
+
     let encryptedData: string | null = null;
     try {
-      encryptedData = await loadFromDB();
+      encryptedData = await loadProfileFromDB(name);
     } catch {
-      // IndexedDB not available (e.g. jsdom), proceed without persistence
+      // IndexedDB not available
     }
 
     if (!encryptedData) {
@@ -114,6 +129,10 @@ export function getProfile(): Profile | null {
   return structuredClone(currentProfile);
 }
 
+export function getCurrentProfileName(): string {
+  return currentProfileName;
+}
+
 export function setField(path: ProfilePath, value: string): boolean {
   if (!unlocked || !currentProfile) return false;
   setPathValue(currentProfile as unknown as Record<string, unknown>, path, value);
@@ -134,19 +153,20 @@ export async function save(passphrase: string): Promise<boolean> {
     const json = JSON.stringify(currentProfile);
     const encrypted = await encrypt(json, passphrase);
     const base64 = encryptedDataToBase64(encrypted);
-    await saveToDB(base64);
+    await saveProfileToDB(currentProfileName, base64);
     return true;
   } catch {
     return false;
   }
 }
 
-export async function importProfile(json: string): Promise<boolean> {
+export async function importProfile(json: string, profileName?: string): Promise<boolean> {
   if (!unlocked) return false;
 
   try {
     const profile = JSON.parse(json) as Profile;
     currentProfile = profile;
+    if (profileName) currentProfileName = profileName;
     resetIdleTimer();
     return true;
   } catch {
@@ -160,9 +180,12 @@ export function exportProfile(): string | null {
   return JSON.stringify(currentProfile);
 }
 
-export async function deleteProfile(): Promise<void> {
-  lock();
-  await deleteFromDB();
+export async function deleteProfile(name?: string): Promise<void> {
+  const target = name ?? currentProfileName;
+  if (target === currentProfileName) {
+    lock();
+  }
+  await deleteProfileFromDB(target);
 }
 
 export function getFlattenedProfile(): Record<string, string> {
@@ -174,6 +197,7 @@ export function getFlattenedProfile(): Record<string, string> {
   flat['identity.familyName'] = currentProfile.identity.familyName;
   flat['identity.fullName'] = currentProfile.identity.fullName;
   flat['identity.preferredName'] = currentProfile.identity.preferredName;
+
   flat['contact.email'] = currentProfile.contact.email;
   flat['contact.phone'] = currentProfile.contact.phone;
 
@@ -194,4 +218,13 @@ export function getFlattenedProfile(): Record<string, string> {
   }
 
   return flat;
+}
+
+export async function listProfiles(): Promise<string[]> {
+  return listProfileNames();
+}
+
+export async function switchProfile(name: string, passphrase: string): Promise<boolean> {
+  lock();
+  return unlock(passphrase, name);
 }

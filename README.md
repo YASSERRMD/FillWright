@@ -163,59 +163,32 @@ All of this happens on-device. No data is transmitted externally at any point.
 
 ## Providing Your Profile
 
-Fillwright needs your personal data to fill forms. There are two ways to provide your profile:
+Fillwright needs your personal data to fill forms. You can create profiles by simply describing yourself in plain text.
 
-### Method 1: Import via UI
+### Create a Profile (Recommended)
 
 1. Run `npm run dev` and open the demo page
-2. Click the gold **Import Profile** button (bottom-right)
-3. Paste your profile JSON into the textarea
-4. Click **Import**
+2. Click the **profile selector** widget (bottom-right, above the fill button)
+3. Click **Create new profile**
+4. Give your profile a name (e.g. "Personal", "Work", "Partner")
+5. **Write a paragraph about yourself** -- Fillwright extracts your data automatically
 
-### Method 2: Edit the source directly
+**Example paragraph:**
 
-Open `src/main.ts` and replace the `DEMO_PROFILE` object with your own data:
+> I am Alice Johnson, a Software Engineer at Acme Corp in the Engineering department.
+> My email is alice@acme.com and my phone is +1-555-0123.
+> I live at 123 Main Street, Springfield, IL 62701.
+> My passport is AB1234567 and my national ID is US-987654321.
 
-```typescript
-const DEMO_PROFILE: Record<string, string> = {
-  'identity.givenName': 'Your Name',
-  'identity.familyName': 'Your Last Name',
-  'identity.fullName': 'Your Full Name',
-  'contact.email': 'you@example.com',
-  'contact.phone': '+1-555-0000',
-  'contact.addresses.0': '123 Your Street, City, Country',
-  // add more fields as needed
-};
-```
+Fillwright detects: name, email, phone, address, employer, job title, department, passport, national ID, and custom fields like nationality or language.
 
-### Profile Template
+### Switch Between Profiles
 
-Copy the template from [`docs/profile-template.json`](docs/profile-template.json):
+Click the profile selector widget to see all saved profiles. Click any profile name to switch. The active profile is used when you click "Fill Form".
 
-```json
-{
-  "identity": {
-    "givenName": "Alice",
-    "familyName": "Johnson",
-    "fullName": "Alice Johnson",
-    "preferredName": "Alice"
-  },
-  "contact": {
-    "email": "alice.johnson@example.com",
-    "phone": "+1-555-0123",
-    "addresses": ["123 Main Street, Springfield, IL 62701"]
-  },
-  "documents": {
-    "passport": "AB1234567",
-    "nationalId": "US-987654321"
-  },
-  "employment": {
-    "employer": "Acme Corp",
-    "jobTitle": "Software Engineer",
-    "department": "Engineering"
-  }
-}
-```
+### Import via JSON
+
+Click the profile selector, then **Create new profile**, and paste structured JSON instead of plain text. See [`docs/profile-template.json`](docs/profile-template.json) for the full template.
 
 ### Profile Field Reference
 
@@ -224,19 +197,17 @@ Copy the template from [`docs/profile-template.json`](docs/profile-template.json
 | `identity.givenName` | First name | `Alice` |
 | `identity.familyName` | Last name | `Johnson` |
 | `identity.fullName` | Full name | `Alice Johnson` |
-| `identity.preferredName` | Preferred name / nickname | `Alice` |
 | `contact.email` | Email address | `alice@example.com` |
 | `contact.phone` | Phone number | `+1-555-0123` |
 | `contact.addresses.N` | Address at index N | `123 Main St, City` |
 | `documents.passport` | Passport number | `AB1234567` |
 | `documents.nationalId` | National ID number | `US-987654321` |
-| `documents.emiratesId` | Emirates ID | `784-1234-5678901-2` |
 | `employment.employer` | Company name | `Acme Corp` |
 | `employment.jobTitle` | Job title | `Software Engineer` |
 | `employment.department` | Department | `Engineering` |
-| `custom.*` | Any custom field | `custom.membership: Premium` |
+| `custom.*` | Any custom field | `custom.nationality: Emirati` |
 
-Your profile is stored encrypted in IndexedDB and auto-locks after 5 minutes of inactivity.
+Profiles are stored encrypted in IndexedDB and auto-lock after 5 minutes of inactivity.
 
 ---
 

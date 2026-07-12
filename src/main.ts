@@ -1,8 +1,18 @@
 import { scanPage, observeChanges } from './scanner';
 import { generateFillPlan } from './nano';
-import { getFlattenedProfile, unlock, setField } from './store';
-import { showConfirmation, showProfileImport } from './ui';
+import {
+  getFlattenedProfile,
+  unlock,
+  setField,
+  save,
+  listProfiles,
+  getCurrentProfileName,
+  switchProfile,
+} from './store';
+import { showConfirmation, showProfileCreate, ProfileSelector } from './ui';
 import { execute } from './mcp/executor';
+import { profileToFlat } from './nano/text-parser';
+import type { Profile } from './types/profile';
 
 const DEMO_PROFILE: Record<string, string> = {
   'identity.givenName': 'Alice',
@@ -19,8 +29,10 @@ const DEMO_PROFILE: Record<string, string> = {
   'employment.department': 'Engineering',
 };
 
-function loadProfile(): void {
-  for (const [key, value] of Object.entries(DEMO_PROFILE)) {
+let selector: ProfileSelector | null = null;
+
+function applyProfile(flat: Record<string, string>): void {
+  for (const [key, value] of Object.entries(flat)) {
     setField(key, value);
   }
 }
@@ -34,7 +46,8 @@ async function initFillwright(): Promise<void> {
     return;
   }
 
-  loadProfile();
+  applyProfile(DEMO_PROFILE);
+  await save('demo');
 
   const profile = getFlattenedProfile();
   console.log('[Fillwright] Profile loaded:', profile);
@@ -42,18 +55,61 @@ async function initFillwright(): Promise<void> {
   const schema = scanPage();
   console.log(`[Fillwright] Scanned ${schema.fields.length} fields`);
 
-  for (const field of schema.fields) {
-    console.log(`  - ${field.field_id}: ${field.label ?? field.name ?? 'unknown'} (${field.type})`);
-  }
-
   observeChanges((newSchema) => {
     console.log(`[Fillwright] Rescanned: ${newSchema.fields.length} fields`);
   });
 
   addFillButton();
-  addImportButton();
+  await initProfileSelector();
 
-  console.log('[Fillwright] Ready. Use the buttons in the bottom-right corner.');
+  console.log('[Fillwright] Ready.');
+}
+
+async function initProfileSelector(): Promise<void> {
+  const names = await listProfiles();
+  const active = getCurrentProfileName();
+
+  selector = new ProfileSelector({
+    profiles: names.length > 0 ? names : ['default'],
+    activeProfile: active,
+    onSelect: (name) => handleProfileSwitch(name),
+    onCreateNew: () => openCreateProfile(),
+  });
+}
+
+async function handleProfileSwitch(name: string): Promise<void> {
+  console.log(`[Fillwright] Switching to profile: ${name}`);
+  const ok = await switchProfile(name, 'demo');
+  if (ok) {
+    const flat = getFlattenedProfile();
+    console.log(`[Fillwright] Loaded profile "${name}":`, flat);
+    refreshSelector();
+  }
+}
+
+async function refreshSelector(): Promise<void> {
+  if (!selector) return;
+  const names = await listProfiles();
+  const active = getCurrentProfileName();
+  selector.update(names.length > 0 ? names : ['default'], active);
+}
+
+function openCreateProfile(): void {
+  listProfiles().then((names) => {
+    showProfileCreate({
+      existingNames: names,
+      onSave: async (name: string, profile: Profile) => {
+        const flat = profileToFlat(profile);
+        applyProfile(flat);
+        await save('demo');
+        console.log(`[Fillwright] Profile "${name}" created:`, flat);
+        await refreshSelector();
+      },
+      onCancel: () => {
+        console.log('[Fillwright] Profile creation cancelled');
+      },
+    });
+  });
 }
 
 function addFillButton(): void {
@@ -78,47 +134,6 @@ function addFillButton(): void {
   `;
   fillBtn.addEventListener('click', () => runFill());
   document.body.appendChild(fillBtn);
-}
-
-function addImportButton(): void {
-  const importBtn = document.createElement('button');
-  importBtn.textContent = 'Import Profile';
-  importBtn.style.cssText = `
-    position: fixed;
-    bottom: 72px;
-    right: 20px;
-    padding: 10px 20px;
-    background: #C5A55A;
-    color: #1B2A4A;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    z-index: 2147483646;
-    font-family: Georgia, serif;
-    letter-spacing: 0.5px;
-  `;
-  importBtn.addEventListener('click', () => openProfileImport());
-  document.body.appendChild(importBtn);
-}
-
-function openProfileImport(): void {
-  const currentProfile = getFlattenedProfile();
-
-  showProfileImport({
-    currentProfile,
-    onImport: (flat) => {
-      for (const [key, value] of Object.entries(flat)) {
-        setField(key, value);
-      }
-      console.log('[Fillwright] Profile imported:', getFlattenedProfile());
-    },
-    onCancel: () => {
-      console.log('[Fillwright] Profile import cancelled');
-    },
-  });
 }
 
 async function runFill(): Promise<void> {

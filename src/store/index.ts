@@ -10,7 +10,9 @@ export {
   deleteProfile,
   getFlattenedProfile,
   setIdleTimeout,
+  getCurrentProfileName,
+  listProfiles,
+  switchProfile,
 } from './profile';
 
 export { encrypt, decrypt, encryptedDataToBase64, base64ToEncryptedData } from './crypto';
-export { saveToDB, loadFromDB, deleteFromDB, hasProfileInDB } from './db';
