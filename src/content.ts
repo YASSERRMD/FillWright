@@ -7,9 +7,19 @@ let enabled = true;
 
 function getProfileFromStorage(): Promise<Record<string, string>> {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'GET_PROFILE' }, (response) => {
-      resolve(response?.profile ?? {});
-    });
+    try {
+      chrome.runtime.sendMessage({ type: 'GET_PROFILE' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn('[Fillwright] Extension context may be invalidated. Reload the page.');
+          resolve({});
+          return;
+        }
+        resolve(response?.profile ?? {});
+      });
+    } catch {
+      console.warn('[Fillwright] Extension context invalidated. Reload the page.');
+      resolve({});
+    }
   });
 }
 
@@ -208,7 +218,11 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
     });
   } catch (err) {
     console.error('[Fillwright] Error:', err);
-    showNotification(`Error: ${String(err)}`, 'error');
+    if (String(err).includes('Extension context invalidated')) {
+      showNotification('Extension was updated. Reload this page to use Fillwright.', 'error');
+    } else {
+      showNotification(`Error: ${String(err)}`, 'error');
+    }
   } finally {
     if (btn) {
       btn.textContent = 'Fill Form';
