@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Fillwright",
   "version": "0.1.0",
-  "description": "Local-first, multi-step form autofiller powered by Gemini Nano",
+  "description": "Local-first, multi-step form autofiller powered by Gemini Nano. Write a paragraph about yourself and Fillwright fills forms for you.",
   "permissions": [
     "activeTab",
     "storage"
@@ -10,16 +10,16 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["dist/content.js"],
-      "css": ["dist/content.css"],
+      "js": ["content.js"],
+      "css": [],
       "run_at": "document_idle"
     }
   ],
   "background": {
-    "service_worker": "dist/background.js"
+    "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "dist/popup.html",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",

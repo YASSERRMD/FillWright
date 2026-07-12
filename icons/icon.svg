@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="navy" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1B2A4A"/>
+      <stop offset="100%" stop-color="#0F1B33"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="url(#navy)"/>
+
+  <!-- Gold pen nib -->
+  <polygon points="64,18 82,18 82,38 94,58 102,72 86,72 70,108 64,118 58,108 42,72 26,72 34,58 46,38 46,18"
+           fill="#C5A55A" stroke="none"/>
+
+  <!-- Navy inner nib body -->
+  <polygon points="64,26 76,26 76,40 86,58 92,68 80,68 68,100 64,108 60,100 48,68 36,68 42,58 52,40 52,26"
+           fill="#1B2A4A" stroke="none"/>
+
+  <!-- Gold nib vent -->
+  <circle cx="64" cy="52" r="6" fill="#C5A55A"/>
+
+  <!-- Gold nib slit -->
+  <rect x="62" y="58" width="4" height="36" rx="2" fill="#C5A55A"/>
+</svg>

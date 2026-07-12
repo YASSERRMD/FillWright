@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fillwright</title>
+  <link rel="stylesheet" href="./popup.css" />
+</head>
+<body>
+  <div class="popup-container">
+    <div class="header">
+      <img src="../icons/icon-48.png" alt="Fillwright" class="logo" />
+      <div class="header-text">
+        <h1>Fillwright</h1>
+        <p class="subtitle">Form Autofiller</p>
+      </div>
+    </div>
+
+    <div class="section" id="profile-section">
+      <div class="section-header">
+        <span class="section-label">Active Profile</span>
+      </div>
+      <div class="profile-row">
+        <select id="profile-select" class="profile-select"></select>
+        <button id="btn-new-profile" class="btn-icon" title="Create new profile">+</button>
+      </div>
+    </div>
+
+    <div class="section" id="create-profile-section" style="display:none;">
+      <div class="section-header">
+        <span class="section-label">Create Profile</span>
+        <button id="btn-cancel-create" class="btn-link">Cancel</button>
+      </div>
+      <input id="profile-name-input" type="text" class="input" placeholder="Profile name" />
+      <textarea id="profile-text-input" class="textarea" rows="5" placeholder="Describe yourself in a paragraph...&#10;&#10;I am John Smith, a Designer at Acme.&#10;Email: john@acme.com&#10;Phone: +1-555-0100"></textarea>
+      <div id="extracted-preview" class="preview" style="display:none;">
+        <div class="preview-title">Detected fields</div>
+        <ul id="extracted-list" class="preview-list"></ul>
+      </div>
+      <button id="btn-save-profile" class="btn btn-gold">Save Profile</button>
+    </div>
+
+    <div class="actions">
+      <button id="btn-fill" class="btn btn-primary">Fill Form</button>
+      <button id="btn-toggle" class="btn btn-outline" title="Toggle Fillwright on this page">Off</button>
+    </div>
+
+    <div class="footer">
+      <span class="status" id="status">Ready</span>
+    </div>
+  </div>
+
+  <script type="module" src="./popup.ts"></script>
+</body>
+</html>

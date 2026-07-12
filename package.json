@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:ext": "vite build --watch --config vite.config.ext.ts",
     "build": "tsc && vite build",
+    "build:ext": "tsc && vite build --config vite.config.ext.ts",
     "lint": "eslint src --ext .ts,.tsx && node scripts/no-emdash.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -24,6 +26,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.50.0",
+    "@types/chrome": "^0.2.2",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
