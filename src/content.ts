@@ -139,6 +139,179 @@ function removeFillwrightUI(): void {
   document.getElementById('fillwright-ext-btn')?.remove();
 }
 
+// --- Gemini Nano (runs in content script = page context) ---
+
+function getSystemPrompt(): string {
+  return `You are a form-filling assistant. You map profile data to form fields.
+
+Rules:
+1. Return ONLY a JSON array of fill steps. No prose, no markdown fences.
+2. Each step: { "tool": "fill_field"|"select_option"|"toggle", "field_id": "...", "value": "...", "confidence": 0.0-1.0 }
+3. For select_option, match by visible label or value.
+4. For toggle, use "true" or "false" as value.
+5. Split full name into given/family as needed.
+6. Normalize dates to each field's pattern.
+7. Normalize country names to match select options.
+8. If confidence < 0.5, leave the field empty (omit from the plan).
+9. Do not guess. Leave empty rather than guess.
+10. Do not include fields not present in the schema.`;
+}
+
+function buildPrompt(schemaJson: string, profileJson: string): string {
+  return `Given this form schema:
+${schemaJson}
+
+And this user profile:
+${profileJson}
+
+Map profile data to form fields. Return a JSON array of fill steps.`;
+}
+
+function stripMarkdownFences(raw: string): string {
+  let cleaned = raw.trim();
+  if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+  else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+  if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+  return cleaned.trim();
+}
+
+function validateStep(step: unknown): boolean {
+  const VALID_TOOLS = new Set(['fill_field', 'select_option', 'toggle']);
+  const obj = step as Record<string, unknown>;
+  if (typeof obj !== 'object' || obj === null) return false;
+  if (typeof obj.tool !== 'string' || !VALID_TOOLS.has(obj.tool)) return false;
+  if (typeof obj.field_id !== 'string' || obj.field_id.length === 0) return false;
+  if (typeof obj.value !== 'string') return false;
+  if (typeof obj.confidence !== 'number') return false;
+  return true;
+}
+
+interface NanoPlanResult {
+  ok: boolean;
+  plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>;
+  source: 'nano' | 'fallback';
+  error?: string;
+}
+
+async function generateFillPlanWithNano(
+  schema: ReturnType<typeof scanPage>,
+  profile: Record<string, string>
+): Promise<NanoPlanResult> {
+  // Check if LanguageModel API is available
+  const LM = (window as unknown as Record<string, unknown>)['LanguageModel'] as {
+    availability: () => Promise<string>;
+    createSession: (opts: { systemPrompt: string }) => Promise<{
+      prompt: (input: string) => Promise<string>;
+      destroy: () => void;
+    }>;
+  } | undefined;
+
+  if (!LM) {
+    console.log('[Fillwright] LanguageModel API not available, using fallback');
+    return generateFallbackPlan(schema, profile);
+  }
+
+  try {
+    const status = await LM.availability();
+    console.log(`[Fillwright] LanguageModel status: ${status}`);
+
+    if (status !== 'available') {
+      console.log('[Fillwright] Model not available, using fallback');
+      return generateFallbackPlan(schema, profile);
+    }
+
+    const session = await LM.createSession({ systemPrompt: getSystemPrompt() });
+    const prompt = buildPrompt(JSON.stringify({ fields: schema.fields }), JSON.stringify(profile));
+
+    console.log('[Fillwright] Sending prompt to Gemini Nano...');
+    const raw = await session.prompt(prompt);
+    session.destroy();
+
+    console.log('[Fillwright] Raw model response:', raw);
+
+    const cleaned = stripMarkdownFences(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      console.warn('[Fillwright] Failed to parse model response as JSON');
+      return generateFallbackPlan(schema, profile);
+    }
+
+    if (!Array.isArray(parsed)) {
+      console.warn('[Fillwright] Model response is not an array');
+      return generateFallbackPlan(schema, profile);
+    }
+
+    const validSteps = (parsed as unknown[]).filter(validateStep);
+    if (validSteps.length === 0) {
+      console.warn('[Fillwright] No valid steps in model response');
+      return generateFallbackPlan(schema, profile);
+    }
+
+    console.log(`[Fillwright] Gemini Nano produced ${validSteps.length} fill steps`);
+    return { ok: true, plan: validSteps as Array<{ tool: string; field_id: string; value: string; confidence: number }>, source: 'nano' };
+  } catch (err) {
+    console.error('[Fillwright] Nano error:', err);
+    return generateFallbackPlan(schema, profile);
+  }
+}
+
+// --- Fallback (regex-based) ---
+
+function generateFallbackPlan(
+  schema: ReturnType<typeof scanPage>,
+  profile: Record<string, string>
+): NanoPlanResult {
+  const plan: Array<{ tool: string; field_id: string; value: string; confidence: number }> = [];
+
+  const LABEL_MAP: Array<{ patterns: RegExp[]; profileKey: string; tool: string }> = [
+    { patterns: [/first\s*name/i], profileKey: 'identity.givenName', tool: 'fill_field' },
+    { patterns: [/last\s*name/i, /family\s*name/i, /surname/i], profileKey: 'identity.familyName', tool: 'fill_field' },
+    { patterns: [/full\s*name/i, /^name$/i], profileKey: 'identity.fullName', tool: 'fill_field' },
+    { patterns: [/e-?mail/i], profileKey: 'contact.email', tool: 'fill_field' },
+    { patterns: [/phone/i, /mobile/i, /cell/i, /telephone/i, /phone\s*number/i], profileKey: 'contact.phone', tool: 'fill_field' },
+    { patterns: [/address/i, /street/i], profileKey: 'contact.addresses.0', tool: 'fill_field' },
+    { patterns: [/country/i], profileKey: 'contact.country', tool: 'select_option' },
+    { patterns: [/passport/i], profileKey: 'documents.passport', tool: 'fill_field' },
+    { patterns: [/national\s*id/i, /id\s*number/i], profileKey: 'documents.nationalId', tool: 'fill_field' },
+    { patterns: [/employer/i, /company/i, /organization/i], profileKey: 'employment.employer', tool: 'fill_field' },
+    { patterns: [/job\s*title/i, /position/i, /role/i], profileKey: 'employment.jobTitle', tool: 'fill_field' },
+  ];
+
+  for (const field of schema.fields) {
+    if (field.hidden || field.type === 'hidden') continue;
+
+    const label = String(field.label ?? field.nearbyText ?? '').trim();
+    if (!label) continue;
+
+    let profileKey: string | null = null;
+    let tool = 'fill_field';
+
+    for (const mapping of LABEL_MAP) {
+      for (const pattern of mapping.patterns) {
+        if (pattern.test(label)) {
+          profileKey = mapping.profileKey;
+          tool = mapping.tool;
+          break;
+        }
+      }
+      if (profileKey) break;
+    }
+
+    if (!profileKey) continue;
+
+    const value = profile[profileKey] ?? '';
+    if (!value) continue;
+
+    plan.push({ tool, field_id: field.field_id, value, confidence: 0.7 });
+  }
+
+  return { ok: true, plan, source: 'fallback' };
+}
+
+// --- Fill execution ---
+
 function applyFillPlan(plan: Array<{ tool: string; field_id: string; value: string }>): number {
   let filled = 0;
 
@@ -151,7 +324,6 @@ function applyFillPlan(plan: Array<{ tool: string; field_id: string; value: stri
     if (!el) continue;
 
     if (step.tool === 'fill_field') {
-      // Handle standard inputs
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
         const nativeSetter = el instanceof HTMLInputElement
           ? Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -164,9 +336,7 @@ function applyFillPlan(plan: Array<{ tool: string; field_id: string; value: stri
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         filled++;
-      }
-      // Handle Google Forms role="textbox"
-      else if (el.getAttribute('role') === 'textbox' || el.getAttribute('contenteditable') === 'true') {
+      } else if (el.getAttribute('role') === 'textbox' || el.getAttribute('contenteditable') === 'true') {
         el.textContent = step.value;
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -215,23 +385,7 @@ function applyFillPlan(plan: Array<{ tool: string; field_id: string; value: stri
   return filled;
 }
 
-function requestFillPlan(
-  schema: ReturnType<typeof scanPage>,
-  profile: Record<string, string>
-): Promise<{ ok: boolean; plan: Array<{ tool: string; field_id: string; value: string }>; source: string; error?: string }> {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { type: 'GENERATE_FILL_PLAN', schema, profile },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          resolve({ ok: false, plan: [], source: 'error', error: chrome.runtime.lastError.message });
-          return;
-        }
-        resolve(response ?? { ok: false, plan: [], source: 'error', error: 'No response' });
-      }
-    );
-  });
-}
+// --- Main handler ---
 
 async function handleFill(btn?: HTMLButtonElement): Promise<void> {
   if (!enabled) return;
@@ -263,19 +417,14 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
       btn.textContent = 'Planning...';
     }
 
-    const result = await requestFillPlan(schema, profile);
-
-    if (!result.ok) {
-      showNotification(`Error: ${result.error}`, 'error');
-      return;
-    }
+    const result = await generateFillPlanWithNano(schema, profile);
 
     console.log(`[Fillwright] Fill plan (${result.source}):`, result.plan);
 
     if (result.plan.length === 0) {
       const fieldLabels = schema.fields.map((f) => f.label ?? f.nearbyText ?? f.name ?? f.type).join(', ');
       showNotification(
-        `Found ${schema.fields.length} fields but couldn't match any to your profile. Detected: ${fieldLabels}`,
+        `Found ${schema.fields.length} fields but couldn't match. Detected: ${fieldLabels}`,
         'error'
       );
       return;
@@ -286,11 +435,11 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
     }
 
     const filled = applyFillPlan(result.plan);
-    showNotification(`Filled ${filled} of ${result.plan.length} fields (${result.source})`, 'success');
+    showNotification(`Filled ${filled}/${result.plan.length} fields (${result.source})`, 'success');
   } catch (err) {
     console.error('[Fillwright] Error:', err);
     if (String(err).includes('Extension context invalidated')) {
-      showNotification('Extension was updated. Reload this page to use Fillwright.', 'error');
+      showNotification('Extension was updated. Reload this page.', 'error');
     } else {
       showNotification(`Error: ${String(err)}`, 'error');
     }
@@ -304,7 +453,8 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
   }
 }
 
-// Listen for messages from popup
+// --- Message listener ---
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'FILL_FORM') {
     handleFill().then(() => {
@@ -334,14 +484,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return false;
 });
 
-// Auto-inject on page load
+// --- Init ---
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => injectFillwrightUI());
 } else {
   injectFillwrightUI();
 }
 
-// Watch for SPA navigation
 observeChanges(() => {
   if (enabled && !document.getElementById('fillwright-ext-btn')) {
     injectFillwrightUI();
