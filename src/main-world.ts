@@ -1,25 +1,17 @@
 // Fillwright Main World Script
 // Runs in the page's main world — has access to window.LanguageModel / window.ai
 
-// Log everything we can find about the AI API
 const w = window as any;
 console.log('[Fillwright MAIN] window.LanguageModel:', typeof w.LanguageModel);
 console.log('[Fillwright MAIN] window.ai:', typeof w.ai);
-console.log('[Fillwright MAIN] window.ai?.languageModel:', typeof w.ai?.languageModel);
-console.log('[Fillwright MAIN] window.ai?.originTrial:', typeof w.ai?.originTrial);
 
-// Find the actual LanguageModel constructor
 function getLanguageModel(): any {
-  // Try direct window.LanguageModel
-  if (w.LanguageModel && typeof w.LanguageModel === 'object') return w.LanguageModel;
   if (typeof w.LanguageModel === 'function') return w.LanguageModel;
-
-  // Try window.ai.languageModel
-  if (w.ai?.languageModel) return w.ai.languageModel;
-
-  // Try window.ai.originTrial.languageModel
-  if (w.ai?.originTrial?.languageModel) return w.ai.originTrial.languageModel;
-
+  if (typeof w.LanguageModel === 'object' && w.LanguageModel) return w.LanguageModel;
+  if (w.ai) {
+    if (w.ai.languageModel) return w.ai.languageModel;
+    if (w.ai.originTrial && w.ai.originTrial.languageModel) return w.ai.originTrial.languageModel;
+  }
   return null;
 }
 
@@ -61,11 +53,10 @@ async function runNano(
     if (typeof LM.availability === 'function') {
       const status = await LM.availability();
       if (status !== 'available') {
-        return { ok: false, plan: [], source: 'nano', error: `Model status: ${status}` };
+        return { ok: false, plan: [], source: 'nano', error: 'Model status: ' + status };
       }
     }
 
-    // Try different API shapes
     let session: any = null;
 
     if (typeof LM.create === 'function') {
@@ -75,10 +66,10 @@ async function runNano(
     } else if (typeof LM === 'function') {
       session = await LM({ systemPrompt: SYSTEM_PROMPT, outputLanguage: 'en' });
     } else {
-      return { ok: false, plan: [], source: 'nano', error: `LM methods: ${Object.keys(LM).join(', ')}` };
+      return { ok: false, plan: [], source: 'nano', error: 'LM methods: ' + Object.keys(LM).join(', ') };
     }
 
-    const prompt = `Given this form schema:\n${JSON.stringify(schema)}\n\nAnd this user profile:\n${JSON.stringify(profile)}\n\nMap profile data to form fields. Return a JSON array of fill steps.`;
+    const prompt = 'Given this form schema:\n' + JSON.stringify(schema) + '\n\nAnd this user profile:\n' + JSON.stringify(profile) + '\n\nMap profile data to form fields. Return a JSON array of fill steps.';
 
     console.log('[Fillwright MAIN] Calling Gemini Nano...');
     const raw = await session.prompt(prompt);
@@ -86,17 +77,22 @@ async function runNano(
     console.log('[Fillwright MAIN] Raw response:', raw);
 
     let cleaned = raw.trim();
-    if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-    else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-    if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+    const fence = '```';
+    if (cleaned.indexOf(fence) === 0) {
+      cleaned = cleaned.slice(3);
+      if (cleaned.indexOf('json') === 0) cleaned = cleaned.slice(4);
+    }
+    if (cleaned.length > 3 && cleaned.slice(-3) === fence) {
+      cleaned = cleaned.slice(0, -3);
+    }
 
     const parsed = JSON.parse(cleaned.trim());
     if (!Array.isArray(parsed)) return { ok: false, plan: [], source: 'nano', error: 'Not an array' };
 
-    const VALID_TOOLS = new Set(['fill_field', 'select_option', 'toggle']);
-    const validSteps = parsed.filter((s: any) =>
-      VALID_TOOLS.has(s.tool) && typeof s.field_id === 'string' && typeof s.value === 'string' && typeof s.confidence === 'number'
-    );
+    const VALID_TOOLS: Record<string, boolean> = { fill_field: true, select_option: true, toggle: true };
+    const validSteps = parsed.filter(function(s: any) {
+      return VALID_TOOLS[s.tool] && typeof s.field_id === 'string' && typeof s.value === 'string' && typeof s.confidence === 'number';
+    });
 
     return { ok: true, plan: validSteps, source: 'nano' };
   } catch (err) {
@@ -105,21 +101,21 @@ async function runNano(
   }
 }
 
-window.addEventListener('message', (event) => {
+window.addEventListener('message', function(event) {
   if (event.source !== window) return;
-  if (event.data?.type !== 'FILLWRIGHT_NANO_REQUEST') return;
+  if (!event.data || event.data.type !== 'FILLWRIGHT_NANO_REQUEST') return;
 
   const { id, action, schema, profile } = event.data;
 
   if (action === 'CHECK_NANO') {
-    checkNano().then((status) => {
-      window.postMessage({ type: 'FILLWRIGHT_NANO_RESPONSE', id, result: { status } }, '*');
+    checkNano().then(function(status) {
+      window.postMessage({ type: 'FILLWRIGHT_NANO_RESPONSE', id: id, result: { status: status } }, '*');
     });
   }
 
   if (action === 'RUN_NANO') {
-    runNano(schema, profile).then((result) => {
-      window.postMessage({ type: 'FILLWRIGHT_NANO_RESPONSE', id, result }, '*');
+    runNano(schema, profile).then(function(result) {
+      window.postMessage({ type: 'FILLWRIGHT_NANO_RESPONSE', id: id, result: result }, '*');
     });
   }
 });

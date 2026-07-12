@@ -1,8 +1,7 @@
 import { scanPage, observeChanges } from './scanner';
-// @ts-ignore
-import bridgeCode from './bridge.js?raw';
 
 let enabled = true;
+let messageCounter = 0;
 
 function getProfileFromStorage(): Promise<Record<string, string>> {
   return new Promise((resolve) => {
@@ -71,23 +70,30 @@ function removeFillwrightUI(): void {
   document.getElementById('fillwright-ext-btn')?.remove();
 }
 
-// --- Inject Gemini Nano bridge into page context via <script> tag ---
+// --- Nano bridge via MAIN world postMessage ---
 
-function injectNanoBridge(): void {
-  if (document.getElementById('fillwright-nano-bridge')) return;
+function sendToMainWorld(data: Record<string, unknown>): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const id = ++messageCounter;
+    const timeout = setTimeout(() => reject(new Error('MAIN world response timeout')), 10000);
 
-  const script = document.createElement('script');
-  script.id = 'fillwright-nano-bridge';
-  script.textContent = bridgeCode;
-  (document.head || document.documentElement).appendChild(script);
+    function handler(event: MessageEvent) {
+      if (event.source !== window) return;
+      if (!event.data || event.data.type !== 'FILLWRIGHT_NANO_RESPONSE' || event.data.id !== id) return;
+      window.removeEventListener('message', handler);
+      clearTimeout(timeout);
+      resolve(event.data.result);
+    }
+
+    window.addEventListener('message', handler);
+    window.postMessage({ type: 'FILLWRIGHT_NANO_REQUEST', id, ...data }, '*');
+  });
 }
 
-// Call the injected bridge
 async function callNanoCheck(): Promise<string> {
-  injectNanoBridge();
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return await (window as any).__fillwrightNanoCheck();
+    const result = await sendToMainWorld({ action: 'CHECK_NANO' }) as { status: string };
+    return result.status;
   } catch {
     return 'unavailable';
   }
@@ -97,13 +103,12 @@ async function callNanoRun(
   schema: ReturnType<typeof scanPage>,
   profile: Record<string, string>
 ): Promise<{ ok: boolean; plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>; source: string; error?: string }> {
-  injectNanoBridge();
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await (window as any).__fillwrightNanoRun(
-      JSON.stringify({ fields: schema.fields }),
-      JSON.stringify(profile)
-    );
+    const result = await sendToMainWorld({
+      action: 'RUN_NANO',
+      schema: { fields: schema.fields },
+      profile
+    }) as { ok: boolean; plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>; source: string; error?: string };
     return result;
   } catch (err) {
     return { ok: false, plan: [], source: 'nano', error: String(err) };
