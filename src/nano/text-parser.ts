@@ -26,8 +26,9 @@ function extractPhone(text: string): string {
 
 function extractName(text: string): { given: string; family: string; full: string } {
   // Try explicit patterns first: "I am X", "My name is X", "Name: X"
+  // Use case-sensitive matching to stop at first lowercase-starting word
   const explicitMatch = text.match(
-    /(?:i\s+am|my\s+name\s+is|i'm|name[:\s]+)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/i
+    /(?:I\s+am|My\s+name\s+is|I'm|Name[:\s]+)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/
   );
   if (explicitMatch) {
     const name = (explicitMatch[1] ?? '').trim();
@@ -39,8 +40,8 @@ function extractName(text: string): { given: string; family: string; full: strin
   const first = sentences[0]?.trim() ?? '';
   const words = first.split(/\s+/);
   if (words.length >= 2 && words.length <= 4) {
-    const allCaps = words.every((w) => /^[A-Z]/.test(w));
-    if (allCaps) {
+    const allCapitalized = words.every((w) => /^[A-Z]/.test(w) && !/^(i|a|an|the|at|in|on|for|as|of|to)$/i.test(w));
+    if (allCapitalized) {
       return parseFullName(words.join(' '));
     }
   }
