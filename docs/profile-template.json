@@ -1,0 +1,29 @@
+{
+  "identity": {
+    "givenName": "Alice",
+    "familyName": "Johnson",
+    "fullName": "Alice Johnson",
+    "preferredName": "Alice"
+  },
+  "contact": {
+    "email": "alice.johnson@example.com",
+    "phone": "+1-555-0123",
+    "addresses": [
+      "123 Main Street, Springfield, IL 62701"
+    ]
+  },
+  "documents": {
+    "passport": "AB1234567",
+    "nationalId": "US-987654321",
+    "emiratesId": ""
+  },
+  "employment": {
+    "employer": "Acme Corp",
+    "jobTitle": "Software Engineer",
+    "department": "Engineering"
+  },
+  "custom": {
+    "membership": "Premium",
+    "preferredLanguage": "English"
+  }
+}

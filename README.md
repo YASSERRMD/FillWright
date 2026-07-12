@@ -45,6 +45,7 @@
 - [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
 - [How It Works](#how-it-works)
+- [Providing Your Profile](#providing-your-profile)
 - [Testing](#testing)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
@@ -157,6 +158,85 @@ Fillwright follows a **scan, plan, execute, correct** loop:
 4. **Correct** -- A confirmation overlay presents each change for user acceptance before it is committed to the DOM
 
 All of this happens on-device. No data is transmitted externally at any point.
+
+---
+
+## Providing Your Profile
+
+Fillwright needs your personal data to fill forms. There are two ways to provide your profile:
+
+### Method 1: Import via UI
+
+1. Run `npm run dev` and open the demo page
+2. Click the gold **Import Profile** button (bottom-right)
+3. Paste your profile JSON into the textarea
+4. Click **Import**
+
+### Method 2: Edit the source directly
+
+Open `src/main.ts` and replace the `DEMO_PROFILE` object with your own data:
+
+```typescript
+const DEMO_PROFILE: Record<string, string> = {
+  'identity.givenName': 'Your Name',
+  'identity.familyName': 'Your Last Name',
+  'identity.fullName': 'Your Full Name',
+  'contact.email': 'you@example.com',
+  'contact.phone': '+1-555-0000',
+  'contact.addresses.0': '123 Your Street, City, Country',
+  // add more fields as needed
+};
+```
+
+### Profile Template
+
+Copy the template from [`docs/profile-template.json`](docs/profile-template.json):
+
+```json
+{
+  "identity": {
+    "givenName": "Alice",
+    "familyName": "Johnson",
+    "fullName": "Alice Johnson",
+    "preferredName": "Alice"
+  },
+  "contact": {
+    "email": "alice.johnson@example.com",
+    "phone": "+1-555-0123",
+    "addresses": ["123 Main Street, Springfield, IL 62701"]
+  },
+  "documents": {
+    "passport": "AB1234567",
+    "nationalId": "US-987654321"
+  },
+  "employment": {
+    "employer": "Acme Corp",
+    "jobTitle": "Software Engineer",
+    "department": "Engineering"
+  }
+}
+```
+
+### Profile Field Reference
+
+| Path | Description | Example |
+|------|-------------|---------|
+| `identity.givenName` | First name | `Alice` |
+| `identity.familyName` | Last name | `Johnson` |
+| `identity.fullName` | Full name | `Alice Johnson` |
+| `identity.preferredName` | Preferred name / nickname | `Alice` |
+| `contact.email` | Email address | `alice@example.com` |
+| `contact.phone` | Phone number | `+1-555-0123` |
+| `contact.addresses.N` | Address at index N | `123 Main St, City` |
+| `documents.passport` | Passport number | `AB1234567` |
+| `documents.nationalId` | National ID number | `US-987654321` |
+| `documents.emiratesId` | Emirates ID | `784-1234-5678901-2` |
+| `employment.employer` | Company name | `Acme Corp` |
+| `employment.jobTitle` | Job title | `Software Engineer` |
+| `employment.department` | Department | `Engineering` |
+| `custom.*` | Any custom field | `custom.membership: Premium` |
+
+Your profile is stored encrypted in IndexedDB and auto-locks after 5 minutes of inactivity.
 
 ---
 
