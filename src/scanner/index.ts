@@ -27,8 +27,8 @@ function getAccessibleIframes(): HTMLIFrameElement[] {
 function scanGoogleFormsFields(doc: Document): FormField[] {
   const fields: FormField[] = [];
 
-  // Google Forms text inputs: div[role="textbox"] or input inside [data-params]
-  const textboxes = doc.querySelectorAll('div[role="textbox"], input[type="text"], textarea');
+  // Google Forms text inputs: only role="textbox" without contenteditable (contenteditable handled by main scanner)
+  const textboxes = doc.querySelectorAll('div[role="textbox"]:not([contenteditable])');
   for (const el of Array.from(textboxes)) {
     const field = extractField(el);
     if (field) fields.push(field);
