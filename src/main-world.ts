@@ -1,8 +1,27 @@
 // Fillwright Main World Script
-// Runs in the page's main world — has access to window.LanguageModel
-// Communicates with isolated content script via window.postMessage
+// Runs in the page's main world — has access to window.LanguageModel / window.ai
 
-console.log('[Fillwright MAIN] Loaded. LanguageModel:', typeof (window as any).LanguageModel);
+// Log everything we can find about the AI API
+const w = window as any;
+console.log('[Fillwright MAIN] window.LanguageModel:', typeof w.LanguageModel);
+console.log('[Fillwright MAIN] window.ai:', typeof w.ai);
+console.log('[Fillwright MAIN] window.ai?.languageModel:', typeof w.ai?.languageModel);
+console.log('[Fillwright MAIN] window.ai?.originTrial:', typeof w.ai?.originTrial);
+
+// Find the actual LanguageModel constructor
+function getLanguageModel(): any {
+  // Try direct window.LanguageModel
+  if (w.LanguageModel && typeof w.LanguageModel === 'object') return w.LanguageModel;
+  if (typeof w.LanguageModel === 'function') return w.LanguageModel;
+
+  // Try window.ai.languageModel
+  if (w.ai?.languageModel) return w.ai.languageModel;
+
+  // Try window.ai.originTrial.languageModel
+  if (w.ai?.originTrial?.languageModel) return w.ai.originTrial.languageModel;
+
+  return null;
+}
 
 const SYSTEM_PROMPT = `You are a form-filling assistant. You map profile data to form fields.
 
@@ -19,19 +38,13 @@ Rules:
 10. Do not include fields not present in the schema.`;
 
 async function checkNano(): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const LM = (window as any).LanguageModel;
+  const LM = getLanguageModel();
   if (!LM) return 'unavailable';
   try {
-    // Check availability
     if (typeof LM.availability === 'function') {
       return await LM.availability();
     }
-    // If no availability method, check if create exists
-    if (typeof LM.create === 'function') {
-      return 'available';
-    }
-    return 'unavailable';
+    return 'available';
   } catch {
     return 'unavailable';
   }
@@ -41,12 +54,10 @@ async function runNano(
   schema: { fields: Array<Record<string, unknown>> },
   profile: Record<string, string>
 ): Promise<{ ok: boolean; plan: Array<Record<string, unknown>>; source: string; error?: string }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const LM = (window as any).LanguageModel;
-  if (!LM) return { ok: false, plan: [], source: 'nano', error: 'LanguageModel not on window' };
+  const LM = getLanguageModel();
+  if (!LM) return { ok: false, plan: [], source: 'nano', error: 'LanguageModel not found on window' };
 
   try {
-    // Check availability first
     if (typeof LM.availability === 'function') {
       const status = await LM.availability();
       if (status !== 'available') {
@@ -54,20 +65,17 @@ async function runNano(
       }
     }
 
-    // Create session — API uses .create() not .createSession()
-    let session: any;
+    // Try different API shapes
+    let session: any = null;
+
     if (typeof LM.create === 'function') {
-      session = await LM.create({
-        systemPrompt: SYSTEM_PROMPT,
-        outputLanguage: 'en',
-      });
+      session = await LM.create({ systemPrompt: SYSTEM_PROMPT, outputLanguage: 'en' });
     } else if (typeof LM.createSession === 'function') {
-      session = await LM.createSession({
-        systemPrompt: SYSTEM_PROMPT,
-        outputLanguage: 'en',
-      });
+      session = await LM.createSession({ systemPrompt: SYSTEM_PROMPT, outputLanguage: 'en' });
+    } else if (typeof LM === 'function') {
+      session = await LM({ systemPrompt: SYSTEM_PROMPT, outputLanguage: 'en' });
     } else {
-      return { ok: false, plan: [], source: 'nano', error: 'No create/createSession method found' };
+      return { ok: false, plan: [], source: 'nano', error: `LM methods: ${Object.keys(LM).join(', ')}` };
     }
 
     const prompt = `Given this form schema:\n${JSON.stringify(schema)}\n\nAnd this user profile:\n${JSON.stringify(profile)}\n\nMap profile data to form fields. Return a JSON array of fill steps.`;
@@ -97,7 +105,6 @@ async function runNano(
   }
 }
 
-// Listen for requests from isolated content script
 window.addEventListener('message', (event) => {
   if (event.source !== window) return;
   if (event.data?.type !== 'FILLWRIGHT_NANO_REQUEST') return;
