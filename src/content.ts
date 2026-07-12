@@ -1,7 +1,4 @@
 import { scanPage, observeChanges } from './scanner';
-import { generateFillPlan } from './nano';
-import { showConfirmation } from './ui';
-import { execute } from './mcp/executor';
 
 let enabled = true;
 
@@ -142,6 +139,100 @@ function removeFillwrightUI(): void {
   document.getElementById('fillwright-ext-btn')?.remove();
 }
 
+function applyFillPlan(plan: Array<{ tool: string; field_id: string; value: string }>): number {
+  let filled = 0;
+
+  for (const step of plan) {
+    const schema = scanPage();
+    const field = schema.fields.find((f) => f.field_id === step.field_id);
+    if (!field) continue;
+
+    const el = document.querySelector(field.selector);
+    if (!el) continue;
+
+    if (step.tool === 'fill_field') {
+      // Handle standard inputs
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        const nativeSetter = el instanceof HTMLInputElement
+          ? Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+          : Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+        if (nativeSetter) {
+          nativeSetter.call(el, step.value);
+        } else {
+          el.value = step.value;
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled++;
+      }
+      // Handle Google Forms role="textbox"
+      else if (el.getAttribute('role') === 'textbox' || el.getAttribute('contenteditable') === 'true') {
+        el.textContent = step.value;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled++;
+      }
+    } else if (step.tool === 'select_option') {
+      if (el instanceof HTMLSelectElement) {
+        el.value = step.value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled++;
+      } else if (el.getAttribute('role') === 'listbox') {
+        const options = el.querySelectorAll('[role="option"]');
+        for (const opt of Array.from(options)) {
+          const dataValue = opt.getAttribute('data-value') ?? opt.textContent?.trim() ?? '';
+          if (dataValue.toLowerCase() === step.value.toLowerCase()) {
+            opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            opt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            opt.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            filled++;
+            break;
+          }
+        }
+      } else if (el.getAttribute('role') === 'radiogroup') {
+        const options = el.querySelectorAll('[role="radio"]');
+        for (const opt of Array.from(options)) {
+          const dataValue = opt.getAttribute('data-value') ?? opt.textContent?.trim() ?? '';
+          if (dataValue.toLowerCase() === step.value.toLowerCase()) {
+            opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            opt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            opt.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            filled++;
+            break;
+          }
+        }
+      }
+    } else if (step.tool === 'toggle') {
+      if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+        el.checked = step.value === 'true';
+        el.dispatchEvent(new Event('click', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled++;
+      }
+    }
+  }
+
+  return filled;
+}
+
+function requestFillPlan(
+  schema: ReturnType<typeof scanPage>,
+  profile: Record<string, string>
+): Promise<{ ok: boolean; plan: Array<{ tool: string; field_id: string; value: string }>; source: string; error?: string }> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: 'GENERATE_FILL_PLAN', schema, profile },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ ok: false, plan: [], source: 'error', error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve(response ?? { ok: false, plan: [], source: 'error', error: 'No response' });
+      }
+    );
+  });
+}
+
 async function handleFill(btn?: HTMLButtonElement): Promise<void> {
   if (!enabled) return;
 
@@ -168,7 +259,11 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
       return;
     }
 
-    const result = await generateFillPlan(schema, profile);
+    if (btn) {
+      btn.textContent = 'Planning...';
+    }
+
+    const result = await requestFillPlan(schema, profile);
 
     if (!result.ok) {
       showNotification(`Error: ${result.error}`, 'error');
@@ -178,44 +273,20 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
     console.log(`[Fillwright] Fill plan (${result.source}):`, result.plan);
 
     if (result.plan.length === 0) {
-      const fieldTypes = schema.fields.map((f) => `${f.label ?? f.name ?? f.autocomplete ?? f.type}`).join(', ');
+      const fieldLabels = schema.fields.map((f) => f.label ?? f.nearbyText ?? f.name ?? f.type).join(', ');
       showNotification(
-        `Found ${schema.fields.length} fields but couldn't match any to your profile. Fields: ${fieldTypes}`,
+        `Found ${schema.fields.length} fields but couldn't match any to your profile. Detected: ${fieldLabels}`,
         'error'
       );
       return;
     }
 
-    const diffItems = result.plan.map((step) => {
-      const field = schema.fields.find((f) => f.field_id === step.field_id);
-      return {
-        field_id: step.field_id,
-        label: field?.label ?? field?.name ?? step.field_id,
-        oldValue: field?.currentValue ?? '',
-        newValue: step.value,
-        confidence: step.confidence,
-        accepted: true,
-      };
-    });
+    if (btn) {
+      btn.textContent = `Filling ${result.plan.length} fields...`;
+    }
 
-    showConfirmation({
-      mode: 'review-before-fill',
-      items: diffItems,
-      onConfirm: (accepted) => {
-        for (const item of accepted) {
-          const tool = result.plan.find((s) => s.field_id === item.field_id)?.tool ?? 'fill_field';
-          execute(tool as 'fill_field' | 'select_option' | 'toggle', {
-            field_id: item.field_id,
-            value: item.newValue,
-            state: item.newValue === 'true',
-          });
-        }
-        showNotification(`Filled ${accepted.length} fields.`, 'success');
-      },
-      onCancel: () => {
-        showNotification('Fill cancelled.', 'info');
-      },
-    });
+    const filled = applyFillPlan(result.plan);
+    showNotification(`Filled ${filled} of ${result.plan.length} fields (${result.source})`, 'success');
   } catch (err) {
     console.error('[Fillwright] Error:', err);
     if (String(err).includes('Extension context invalidated')) {
