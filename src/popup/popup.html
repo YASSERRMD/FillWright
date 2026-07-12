@@ -9,37 +9,108 @@
 <body>
   <div class="popup-container">
     <div class="header">
-      <img src="../icons/icon-48.png" alt="Fillwright" class="logo" />
+      <img src="icons/icon-48.png" alt="Fillwright" class="logo" />
       <div class="header-text">
         <h1>Fillwright</h1>
         <p class="subtitle">Form Autofiller</p>
       </div>
     </div>
 
+    <!-- No profile warning -->
+    <div id="no-profile-warning" class="warning" style="display:none;">
+      <div class="warning-icon">!</div>
+      <div class="warning-text">
+        <strong>No profile found</strong>
+        <p>Create a profile first to fill forms.</p>
+      </div>
+    </div>
+
+    <!-- Profile selector -->
     <div class="section" id="profile-section">
       <div class="section-header">
         <span class="section-label">Active Profile</span>
       </div>
       <div class="profile-row">
         <select id="profile-select" class="profile-select"></select>
+        <button id="btn-edit-profile" class="btn-icon" title="Edit profile" disabled>&#9998;</button>
+        <button id="btn-delete-profile" class="btn-icon btn-icon-danger" title="Delete profile" disabled>&#10005;</button>
         <button id="btn-new-profile" class="btn-icon" title="Create new profile">+</button>
       </div>
     </div>
 
-    <div class="section" id="create-profile-section" style="display:none;">
+    <!-- Profile detail view -->
+    <div id="profile-detail" class="profile-detail" style="display:none;">
+      <div class="detail-header">
+        <span class="detail-name" id="detail-name"></span>
+        <span class="detail-count" id="detail-count"></span>
+      </div>
+      <div class="detail-grid" id="detail-grid"></div>
+      <div class="detail-actions">
+        <button id="btn-edit-this" class="btn btn-outline btn-sm">Edit</button>
+      </div>
+    </div>
+
+    <!-- Create / Edit profile form -->
+    <div id="profile-form" class="profile-form" style="display:none;">
       <div class="section-header">
-        <span class="section-label">Create Profile</span>
-        <button id="btn-cancel-create" class="btn-link">Cancel</button>
+        <span class="section-label" id="form-title">Create Profile</span>
+        <button id="btn-cancel-form" class="btn-link">Cancel</button>
       </div>
-      <input id="profile-name-input" type="text" class="input" placeholder="Profile name" />
-      <textarea id="profile-text-input" class="textarea" rows="5" placeholder="Describe yourself in a paragraph...&#10;&#10;I am John Smith, a Designer at Acme.&#10;Email: john@acme.com&#10;Phone: +1-555-0100"></textarea>
-      <div id="extracted-preview" class="preview" style="display:none;">
-        <div class="preview-title">Detected fields</div>
-        <ul id="extracted-list" class="preview-list"></ul>
+
+      <input id="form-profile-name" type="text" class="input" placeholder="Profile name (e.g. Personal, Work)" />
+
+      <div class="form-tabs">
+        <button class="tab active" data-tab="quick">Quick (Paragraph)</button>
+        <button class="tab" data-tab="manual">Manual</button>
       </div>
+
+      <!-- Quick mode: paragraph input -->
+      <div id="tab-quick" class="tab-content active">
+        <textarea id="form-text-input" class="textarea" rows="6" placeholder="Describe yourself in a paragraph...&#10;&#10;I am John Smith, a Software Engineer at Acme Corp.&#10;My email is john@acme.com and phone is +1-555-0100.&#10;I live at 123 Main Street, Springfield, IL 62701.&#10;My passport is AB1234567."></textarea>
+        <div id="extracted-preview" class="preview" style="display:none;">
+          <div class="preview-title">Detected fields</div>
+          <ul id="extracted-list" class="preview-list"></ul>
+        </div>
+      </div>
+
+      <!-- Manual mode: individual fields -->
+      <div id="tab-manual" class="tab-content">
+        <div class="field-group">
+          <div class="field-group-title">Identity</div>
+          <input class="input field-input" data-field="identity.givenName" placeholder="First name" />
+          <input class="input field-input" data-field="identity.familyName" placeholder="Last name" />
+          <input class="input field-input" data-field="identity.fullName" placeholder="Full name" />
+          <input class="input field-input" data-field="identity.preferredName" placeholder="Preferred name" />
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Contact</div>
+          <input class="input field-input" data-field="contact.email" placeholder="Email" type="email" />
+          <input class="input field-input" data-field="contact.phone" placeholder="Phone number" type="tel" />
+          <input class="input field-input" data-field="contact.addresses.0" placeholder="Address" />
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Documents</div>
+          <input class="input field-input" data-field="documents.passport" placeholder="Passport number" />
+          <input class="input field-input" data-field="documents.nationalId" placeholder="National ID" />
+          <input class="input field-input" data-field="documents.emiratesId" placeholder="Emirates ID" />
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Employment</div>
+          <input class="input field-input" data-field="employment.employer" placeholder="Employer / Company" />
+          <input class="input field-input" data-field="employment.jobTitle" placeholder="Job title" />
+          <input class="input field-input" data-field="employment.department" placeholder="Department" />
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Custom Fields</div>
+          <div id="custom-fields"></div>
+          <button id="btn-add-custom" class="btn-link btn-add">+ Add field</button>
+        </div>
+      </div>
+
       <button id="btn-save-profile" class="btn btn-gold">Save Profile</button>
     </div>
 
+    <!-- Actions -->
     <div class="actions">
       <button id="btn-fill" class="btn btn-primary">Fill Form</button>
       <button id="btn-toggle" class="btn btn-outline" title="Toggle Fillwright on this page">Off</button>

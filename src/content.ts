@@ -15,6 +15,44 @@ function getProfileFromStorage(): Promise<Record<string, string>> {
   });
 }
 
+function showNoProfileOverlay(): void {
+  if (document.getElementById('fillwright-no-profile')) return;
+
+  const host = document.createElement('div');
+  host.id = 'fillwright-no-profile';
+  host.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;display:flex;align-items:center;justify-content:center;';
+
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);';
+  backdrop.addEventListener('click', () => host.remove());
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:white;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:400px;width:90%;padding:24px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;';
+
+  dialog.innerHTML = `
+    <div style="width:56px;height:56px;background:#FFF3CD;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+      <span style="font-size:28px;color:#856404;font-weight:700;">!</span>
+    </div>
+    <h2 style="margin:0 0 8px;font-family:Georgia,serif;font-size:18px;color:#1B2A4A;">No Profile Found</h2>
+    <p style="margin:0 0 16px;font-size:14px;color:#666;line-height:1.5;">
+      You need to create a profile before Fillwright can fill forms.
+    </p>
+    <p style="margin:0 0 20px;font-size:13px;color:#999;line-height:1.5;">
+      Click the <strong style="color:#1B2A4A;">Fillwright icon</strong> in your Chrome toolbar, then click <strong style="color:#C5A55A;">+</strong> to create a profile.
+    </p>
+    <button id="fillwright-no-profile-close" style="padding:10px 24px;background:#1B2A4A;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:Georgia,serif;">
+      Got it
+    </button>
+  `;
+
+  host.appendChild(backdrop);
+  host.appendChild(dialog);
+  document.body.appendChild(host);
+
+  dialog.querySelector('#fillwright-no-profile-close')?.addEventListener('click', () => host.remove());
+  backdrop.addEventListener('click', () => host.remove());
+}
+
 function injectFillwrightUI(): void {
   if (document.getElementById('fillwright-ext-btn')) return;
 
@@ -53,8 +91,9 @@ async function handleFill(): Promise<void> {
   if (!enabled) return;
 
   const profile = await getProfileFromStorage();
+
   if (Object.keys(profile).length === 0) {
-    console.warn('[Fillwright] No profile data. Open the extension popup and create a profile.');
+    showNoProfileOverlay();
     return;
   }
 
@@ -113,7 +152,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }).catch((err) => {
       sendResponse({ filled: false, error: String(err) });
     });
-    return true; // async response
+    return true;
   }
 
   if (msg.type === 'TOGGLE_FILLWRIGHT') {
@@ -126,6 +165,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: true });
     return false;
   }
+
+  if (msg.type === 'PING') {
+    sendResponse({ pong: true });
+    return false;
+  }
+
+  return false;
 });
 
 // Auto-inject on page load

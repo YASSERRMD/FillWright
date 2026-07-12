@@ -8,7 +8,9 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
   color: #1a1a1a;
-  width: 340px;
+  width: 380px;
+  max-height: 580px;
+  overflow-y: auto;
   background: #fff;
 }
 
@@ -44,6 +46,45 @@ body {
   color: #999;
 }
 
+/* Warning */
+.warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FFF3CD;
+  border: 1px solid #F0C36D;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.warning-icon {
+  width: 28px;
+  height: 28px;
+  background: #F0C36D;
+  color: #856404;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.warning-text strong {
+  display: block;
+  font-size: 13px;
+  color: #856404;
+}
+
+.warning-text p {
+  font-size: 12px;
+  color: #856404;
+  margin-top: 2px;
+}
+
+/* Section */
 .section {
   margin-bottom: 14px;
 }
@@ -63,6 +104,7 @@ body {
   color: #1B2A4A;
 }
 
+/* Profile row */
 .profile-row {
   display: flex;
   gap: 6px;
@@ -89,16 +131,141 @@ body {
   border: 1px solid #d0d0d0;
   border-radius: 6px;
   background: #fff;
-  font-size: 18px;
+  font-size: 15px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #1B2A4A;
+  transition: all 0.15s;
 }
 
-.btn-icon:hover {
+.btn-icon:hover:not(:disabled) {
   background: #f2f2f2;
+  border-color: #C5A55A;
+}
+
+.btn-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-icon-danger:hover:not(:disabled) {
+  background: #fdecea;
+  border-color: #d93025;
+  color: #d93025;
+}
+
+/* Profile detail */
+.profile-detail {
+  background: #f8f9fa;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.detail-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1B2A4A;
+}
+
+.detail-count {
+  font-size: 11px;
+  color: #999;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.detail-item {
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.detail-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.detail-item-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #999;
+  letter-spacing: 0.3px;
+}
+
+.detail-item-value {
+  font-size: 12px;
+  color: #333;
+  margin-top: 1px;
+  word-break: break-word;
+}
+
+.detail-item-value.empty {
+  color: #ccc;
+  font-style: italic;
+}
+
+.detail-actions {
+  margin-top: 10px;
+  text-align: right;
+}
+
+/* Profile form */
+.profile-form {
+  margin-bottom: 14px;
+}
+
+.form-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e8e8e8;
+  padding-bottom: 0;
+}
+
+.tab {
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: #999;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab.active {
+  color: #1B2A4A;
+  border-bottom-color: #C5A55A;
+  font-weight: 600;
+}
+
+.tab:hover:not(.active) {
+  color: #666;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
 }
 
 .input {
@@ -136,6 +303,51 @@ body {
   color: #aaa;
 }
 
+/* Field groups */
+.field-group {
+  margin-bottom: 12px;
+}
+
+.field-group-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #1B2A4A;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.field-input {
+  margin-bottom: 6px;
+}
+
+/* Custom fields */
+.custom-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.custom-row .input {
+  margin-bottom: 0;
+}
+
+.custom-row .input:first-child {
+  flex: 0 0 100px;
+}
+
+.custom-row .input:last-child {
+  flex: 1;
+}
+
+.btn-add {
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+/* Preview */
 .preview {
   background: #f2f2f2;
   border-radius: 6px;
@@ -171,6 +383,7 @@ body {
   font-weight: 500;
 }
 
+/* Buttons */
 .btn {
   width: 100%;
   padding: 10px;
@@ -180,6 +393,7 @@ body {
   font-weight: 600;
   cursor: pointer;
   margin-bottom: 6px;
+  transition: all 0.15s;
 }
 
 .btn-primary {
@@ -189,6 +403,11 @@ body {
 
 .btn-primary:hover {
   background: #0F1B33;
+}
+
+.btn-primary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
 }
 
 .btn-gold {
@@ -208,12 +427,20 @@ body {
 
 .btn-outline:hover {
   background: #f8f8f8;
+  border-color: #C5A55A;
+  color: #1B2A4A;
 }
 
 .btn-outline.active {
   border-color: #C5A55A;
   color: #1B2A4A;
   font-weight: 600;
+}
+
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 12px;
+  width: auto;
 }
 
 .btn-link {
@@ -228,6 +455,7 @@ body {
   color: #1B2A4A;
 }
 
+/* Actions */
 .actions {
   display: flex;
   gap: 6px;
@@ -237,6 +465,7 @@ body {
   flex: 1;
 }
 
+/* Footer */
 .footer {
   padding-top: 10px;
   border-top: 1px solid #f0f0f0;
