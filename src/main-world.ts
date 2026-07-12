@@ -1,6 +1,6 @@
 // Fillwright Main World Script
-// Runs in the page's main world context — has access to window.LanguageModel
-// Communicates with the isolated content script via window.postMessage
+// Runs in the page's main world — has access to window.LanguageModel
+// Communicates with isolated content script via window.postMessage
 
 console.log('[Fillwright MAIN] Loaded. LanguageModel:', typeof (window as any).LanguageModel);
 
@@ -23,7 +23,15 @@ async function checkNano(): Promise<string> {
   const LM = (window as any).LanguageModel;
   if (!LM) return 'unavailable';
   try {
-    return await LM.availability();
+    // Check availability
+    if (typeof LM.availability === 'function') {
+      return await LM.availability();
+    }
+    // If no availability method, check if create exists
+    if (typeof LM.create === 'function') {
+      return 'available';
+    }
+    return 'unavailable';
   } catch {
     return 'unavailable';
   }
@@ -35,21 +43,39 @@ async function runNano(
 ): Promise<{ ok: boolean; plan: Array<Record<string, unknown>>; source: string; error?: string }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const LM = (window as any).LanguageModel;
-  if (!LM) return { ok: false, plan: [], source: 'nano', error: 'LanguageModel not available' };
+  if (!LM) return { ok: false, plan: [], source: 'nano', error: 'LanguageModel not on window' };
 
   try {
-    const status = await LM.availability();
-    if (status !== 'available') {
-      return { ok: false, plan: [], source: 'nano', error: `Model status: ${status}` };
+    // Check availability first
+    if (typeof LM.availability === 'function') {
+      const status = await LM.availability();
+      if (status !== 'available') {
+        return { ok: false, plan: [], source: 'nano', error: `Model status: ${status}` };
+      }
     }
 
-    const session = await LM.createSession({ systemPrompt: SYSTEM_PROMPT });
+    // Create session — API uses .create() not .createSession()
+    let session: any;
+    if (typeof LM.create === 'function') {
+      session = await LM.create({
+        systemPrompt: SYSTEM_PROMPT,
+        outputLanguage: 'en',
+      });
+    } else if (typeof LM.createSession === 'function') {
+      session = await LM.createSession({
+        systemPrompt: SYSTEM_PROMPT,
+        outputLanguage: 'en',
+      });
+    } else {
+      return { ok: false, plan: [], source: 'nano', error: 'No create/createSession method found' };
+    }
+
     const prompt = `Given this form schema:\n${JSON.stringify(schema)}\n\nAnd this user profile:\n${JSON.stringify(profile)}\n\nMap profile data to form fields. Return a JSON array of fill steps.`;
 
     console.log('[Fillwright MAIN] Calling Gemini Nano...');
     const raw = await session.prompt(prompt);
-    session.destroy();
-    console.log('[Fillwright MAIN] Response:', raw);
+    if (typeof session.destroy === 'function') session.destroy();
+    console.log('[Fillwright MAIN] Raw response:', raw);
 
     let cleaned = raw.trim();
     if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
