@@ -85,8 +85,16 @@ async function runNano(
     if (cleaned.length > 3 && cleaned.slice(-3) === fence) {
       cleaned = cleaned.slice(0, -3);
     }
+    cleaned = cleaned.trim();
 
-    const parsed = JSON.parse(cleaned.trim());
+    // Extract JSON array — model may return prose before/after the JSON
+    const firstBracket = cleaned.indexOf('[');
+    const lastBracket = cleaned.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket > firstBracket) {
+      cleaned = cleaned.substring(firstBracket, lastBracket + 1);
+    }
+
+    const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed)) return { ok: false, plan: [], source: 'nano', error: 'Not an array' };
 
     const VALID_TOOLS: Record<string, boolean> = { fill_field: true, select_option: true, toggle: true };
