@@ -101,9 +101,21 @@ async function runNano(
     if (!Array.isArray(parsed)) return { ok: false, plan: [], source: 'nano', error: 'Not an array' };
 
     const VALID_TOOLS: Record<string, boolean> = { fill_field: true, select_option: true, toggle: true };
-    const validSteps = parsed.filter(function(s: any) {
-      return VALID_TOOLS[s.tool] && typeof s.field_id === 'string' && typeof s.value === 'string' && typeof s.confidence === 'number';
-    });
+    // Normalize instead of dropping: coerce numeric values to strings and
+    // default a missing confidence, so usable steps aren't silently lost.
+    const validSteps = parsed
+      .filter(function(s: any) {
+        return s && VALID_TOOLS[s.tool] && typeof s.field_id === 'string' && s.value !== undefined && s.value !== null;
+      })
+      .map(function(s: any) {
+        return {
+          tool: s.tool,
+          field_id: s.field_id,
+          value: String(s.value),
+          confidence: typeof s.confidence === 'number' ? s.confidence : 0.7,
+        };
+      })
+      .filter(function(s: any) { return s.value.trim() !== ''; });
 
     return { ok: true, plan: validSteps, source: 'nano' };
   } catch (err) {
