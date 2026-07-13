@@ -92,9 +92,17 @@ async function runNanoPlan(
     }
 
     const VALID_TOOLS = new Set(['fill_field', 'select_option', 'toggle']);
-    const validSteps = parsed.filter((s: any) =>
-      VALID_TOOLS.has(s.tool) && typeof s.field_id === 'string' && typeof s.value === 'string' && typeof s.confidence === 'number'
-    );
+    // Normalize instead of dropping: coerce numeric values to strings and
+    // default a missing confidence, so usable steps aren't silently lost.
+    const validSteps = parsed
+      .filter((s: any) => s && VALID_TOOLS.has(s.tool) && typeof s.field_id === 'string' && s.value !== undefined && s.value !== null)
+      .map((s: any) => ({
+        tool: s.tool,
+        field_id: s.field_id,
+        value: String(s.value),
+        confidence: typeof s.confidence === 'number' ? s.confidence : 0.7,
+      }))
+      .filter((s: any) => s.value.trim() !== '');
 
     return { ok: true, plan: validSteps, source: 'nano' };
   } catch (err) {

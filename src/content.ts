@@ -133,10 +133,25 @@ async function callNanoRun(
 ): Promise<{ ok: boolean; plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>; source: string; error?: string }> {
   type NanoResult = { ok: boolean; plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>; source: string; error?: string };
 
+  // Slim the schema so Gemini Nano's small context isn't swamped on larger
+  // forms — only send what's needed to map profile data to fields.
+  const nanoFields = schema.fields
+    .filter((f) => !f.hidden && f.type !== 'hidden')
+    .map((f) => ({
+      field_id: f.field_id,
+      type: f.type,
+      label: f.label ?? f.nearbyText ?? f.name ?? f.id ?? null,
+      name: f.name,
+      autocomplete: f.autocomplete,
+      required: f.required,
+      pattern: f.pattern,
+      options: f.options,
+    }));
+
   if (nanoVia === 'extension') {
     const result = await sendToExtension<NanoResult>({
       type: 'RUN_NANO',
-      schema: { fields: schema.fields },
+      schema: { fields: nanoFields },
       profile,
     });
     return result ?? { ok: false, plan: [], source: 'nano', error: 'No response from extension' };
@@ -145,7 +160,7 @@ async function callNanoRun(
   try {
     const result = await sendToMainWorld({
       action: 'RUN_NANO',
-      schema: { fields: schema.fields },
+      schema: { fields: nanoFields },
       profile
     }) as NanoResult;
     return result;
@@ -190,6 +205,15 @@ function generateFallbackPlan(
       }
       if (profileKey) break;
     }
+    // No built-in mapping matched: try the user's custom profile keys by name
+    if (!profileKey) {
+      const labelLower = label.toLowerCase();
+      for (const key of Object.keys(profile)) {
+        if (!key.startsWith('custom.')) continue;
+        const keyText = key.slice(7).replace(/[_-]+/g, ' ').toLowerCase().trim();
+        if (keyText.length > 2 && labelLower.includes(keyText)) { profileKey = key; break; }
+      }
+    }
     if (!profileKey) continue;
     let value = profile[profileKey] ?? '';
     if (!value) continue;
@@ -208,6 +232,22 @@ function generateFallbackPlan(
 }
 
 // --- Fill execution ---
+
+type PlanStep = { tool: string; field_id: string; value: string; confidence: number };
+
+function sanitizePlan(plan: PlanStep[]): PlanStep[] {
+  const byField = new Map<string, PlanStep>();
+  for (const step of plan) {
+    const value = String(step.value ?? '').trim();
+    // Never write empty values — a blank step must not wipe a field
+    if (!value && step.tool !== 'toggle') continue;
+    const prev = byField.get(step.field_id);
+    if (!prev || (step.confidence ?? 0) > (prev.confidence ?? 0)) {
+      byField.set(step.field_id, { ...step, value });
+    }
+  }
+  return Array.from(byField.values());
+}
 
 function applyFillPlan(plan: Array<{ tool: string; field_id: string; value: string }>): number {
   let filled = 0;
@@ -286,7 +326,12 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
   if (btn) { btn.textContent = 'Scanning...'; btn.style.background = '#C5A55A'; btn.style.color = '#1B2A4A'; btn.disabled = true; }
 
   try {
-    const profile = await getProfileFromStorage();
+    const rawProfile = await getProfileFromStorage();
+    // Drop empty entries — they confuse Nano into echoing empty values
+    const profile: Record<string, string> = {};
+    for (const [key, val] of Object.entries(rawProfile)) {
+      if (typeof val === 'string' && val.trim()) profile[key] = val.trim();
+    }
     if (Object.keys(profile).length === 0) { showNoProfileOverlay(); return; }
 
     const schema = scanPage();
@@ -321,11 +366,22 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
       console.warn('[Fillwright] Nano error:', err);
     }
 
-    // Fallback
+    // Drop empty/duplicate Nano steps before merging, so a blank step can't
+    // both wipe a field and block the fallback from covering it
+    plan = sanitizePlan(plan);
+
+    // Always compute the pattern fallback; it covers fields Nano missed
+    const fb = generateFallbackPlan(schema, profile);
     if (plan.length === 0) {
-      const fb = generateFallbackPlan(schema, profile);
       plan = fb.plan;
       source = fb.source;
+    } else {
+      const covered = new Set(plan.map((s) => s.field_id));
+      const extras = fb.plan.filter((s) => !covered.has(s.field_id));
+      if (extras.length > 0) {
+        plan = plan.concat(extras);
+        source = 'nano+fallback';
+      }
     }
 
     console.log(`[Fillwright] Fill plan (${source}):`, plan);
