@@ -1,24 +1,48 @@
 // Fillwright Background Service Worker
 // Handles extension lifecycle, messaging, and offscreen document
 
-let offscreenCreated = false;
+async function hasOffscreen(): Promise<boolean> {
+  try {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
+    });
+    return contexts.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 async function ensureOffscreen(): Promise<void> {
-  if (offscreenCreated) return;
+  if (await hasOffscreen()) return;
 
   try {
     await chrome.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: ['DOM_PARSER' as chrome.offscreen.Reason],
-      justification: 'Gemini Nano LanguageModel API requires page context',
+      justification: 'Gemini Nano LanguageModel API requires an extension page context',
     });
-    offscreenCreated = true;
     console.log('[Fillwright] Offscreen document created');
   } catch (err) {
+    // Racing "already exists" errors are fine; anything else is logged
     console.warn('[Fillwright] Offscreen creation error:', err);
-    // May already exist
-    offscreenCreated = true;
   }
+}
+
+function forwardToOffscreen(
+  message: Record<string, unknown>,
+  sendResponse: (response: unknown) => void,
+  fallback: Record<string, unknown>
+): void {
+  ensureOffscreen().then(() => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError || response === undefined) {
+        console.warn('[Fillwright] Offscreen unreachable:', chrome.runtime.lastError?.message);
+        sendResponse(fallback);
+        return;
+      }
+      sendResponse(response);
+    });
+  });
 }
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -57,23 +81,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'CHECK_NANO') {
-    ensureOffscreen().then(() => {
-      chrome.runtime.sendMessage({ type: 'CHECK_NANO' }, (response) => {
-        sendResponse(response);
-      });
-    });
+    forwardToOffscreen(
+      { type: 'OFFSCREEN_CHECK_NANO' },
+      sendResponse,
+      { status: 'unavailable' }
+    );
     return true;
   }
 
   if (msg.type === 'RUN_NANO') {
-    ensureOffscreen().then(() => {
-      chrome.runtime.sendMessage(
-        { type: 'RUN_NANO', schema: msg.schema, profile: msg.profile },
-        (response) => {
-          sendResponse(response);
-        }
-      );
-    });
+    forwardToOffscreen(
+      { type: 'OFFSCREEN_RUN_NANO', schema: msg.schema, profile: msg.profile },
+      sendResponse,
+      { ok: false, plan: [], source: 'nano', error: 'Offscreen document unreachable' }
+    );
     return true;
   }
 

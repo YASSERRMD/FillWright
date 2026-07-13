@@ -72,10 +72,10 @@ function removeFillwrightUI(): void {
 
 // --- Nano bridge via MAIN world postMessage ---
 
-function sendToMainWorld(data: Record<string, unknown>): Promise<unknown> {
+function sendToMainWorld(data: Record<string, unknown>, timeoutMs = 60000): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++messageCounter;
-    const timeout = setTimeout(() => reject(new Error('MAIN world response timeout')), 60000);
+    const timeout = setTimeout(() => reject(new Error('MAIN world response timeout')), timeoutMs);
 
     function handler(event: MessageEvent) {
       if (event.source !== window) return;
@@ -90,12 +90,40 @@ function sendToMainWorld(data: Record<string, unknown>): Promise<unknown> {
   });
 }
 
+function sendToExtension<T>(msg: Record<string, unknown>): Promise<T | null> {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(msg, (response) => {
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        resolve((response as T) ?? null);
+      });
+    } catch { resolve(null); }
+  });
+}
+
+// The Prompt API is exposed to extension pages (offscreen document), not to
+// regular web pages, so the extension path is checked first. The page MAIN
+// world path only works on pages with an origin trial or Chrome flag enabled.
+let nanoVia: 'extension' | 'page' = 'extension';
+
 async function callNanoCheck(): Promise<string> {
+  const ext = await sendToExtension<{ status: string }>({ type: 'CHECK_NANO' });
+  console.log('[Fillwright] Nano status via extension:', ext?.status);
+  if (ext?.status === 'available') {
+    nanoVia = 'extension';
+    return 'available';
+  }
+
   try {
-    const result = await sendToMainWorld({ action: 'CHECK_NANO' }) as { status: string };
-    return result.status;
+    const page = await sendToMainWorld({ action: 'CHECK_NANO' }, 3000) as { status: string };
+    console.log('[Fillwright] Nano status via page:', page?.status);
+    if (page?.status === 'available') {
+      nanoVia = 'page';
+      return 'available';
+    }
+    return ext?.status ?? page?.status ?? 'unavailable';
   } catch {
-    return 'unavailable';
+    return ext?.status ?? 'unavailable';
   }
 }
 
@@ -103,12 +131,23 @@ async function callNanoRun(
   schema: ReturnType<typeof scanPage>,
   profile: Record<string, string>
 ): Promise<{ ok: boolean; plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>; source: string; error?: string }> {
+  type NanoResult = { ok: boolean; plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>; source: string; error?: string };
+
+  if (nanoVia === 'extension') {
+    const result = await sendToExtension<NanoResult>({
+      type: 'RUN_NANO',
+      schema: { fields: schema.fields },
+      profile,
+    });
+    return result ?? { ok: false, plan: [], source: 'nano', error: 'No response from extension' };
+  }
+
   try {
     const result = await sendToMainWorld({
       action: 'RUN_NANO',
       schema: { fields: schema.fields },
       profile
-    }) as { ok: boolean; plan: Array<{ tool: string; field_id: string; value: string; confidence: number }>; source: string; error?: string };
+    }) as NanoResult;
     return result;
   } catch (err) {
     return { ok: false, plan: [], source: 'nano', error: String(err) };
@@ -152,11 +191,16 @@ function generateFallbackPlan(
       if (profileKey) break;
     }
     if (!profileKey) continue;
-    const value = profile[profileKey] ?? '';
+    let value = profile[profileKey] ?? '';
     if (!value) continue;
-    if (tool === 'select_option' && field.options) {
-      const match = field.options.find((o) => o.label.toLowerCase().includes(value.toLowerCase()) || o.value.toLowerCase().includes(value.toLowerCase()));
+    // Fields with options (selects, radio groups) need an option match, not raw text
+    if (field.options && field.options.length > 0) {
+      tool = 'select_option';
+      const lower = value.toLowerCase();
+      const match = field.options.find((o) => o.label.toLowerCase() === lower || o.value.toLowerCase() === lower)
+        ?? field.options.find((o) => o.label.toLowerCase().includes(lower) || o.value.toLowerCase().includes(lower));
       if (!match) continue;
+      value = match.value;
     }
     plan.push({ tool, field_id: field.field_id, value, confidence: 0.7 });
   }
@@ -191,9 +235,17 @@ function applyFillPlan(plan: Array<{ tool: string; field_id: string; value: stri
         }
       } else if (step.tool === 'select_option') {
         if (el instanceof HTMLSelectElement) {
-          el.value = step.value;
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          filled++;
+          // The plan value may be the option's value or its visible label
+          const target = step.value.toLowerCase();
+          const options = Array.from(el.options);
+          const match = options.find((o) => o.value.toLowerCase() === target)
+            ?? options.find((o) => o.text.trim().toLowerCase() === target)
+            ?? options.find((o) => o.text.trim().toLowerCase().includes(target) || (target.length > 1 && o.value.toLowerCase().includes(target)));
+          if (match) {
+            el.value = match.value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            filled++;
+          }
         } else if (el.getAttribute('role') === 'listbox' || el.getAttribute('role') === 'radiogroup') {
           const opts = el.querySelectorAll('[role="option"], [role="radio"]');
           for (const opt of Array.from(opts)) {
@@ -262,6 +314,8 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
         } else {
           console.warn('[Fillwright] Nano failed:', nanoResult?.error);
         }
+      } else if (status === 'downloadable' || status === 'downloading') {
+        showNotification('Gemini Nano model is still downloading. Using pattern matching for now.', 'info');
       }
     } catch (err) {
       console.warn('[Fillwright] Nano error:', err);
