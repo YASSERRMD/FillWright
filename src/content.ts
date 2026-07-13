@@ -75,7 +75,7 @@ function removeFillwrightUI(): void {
 function sendToMainWorld(data: Record<string, unknown>): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++messageCounter;
-    const timeout = setTimeout(() => reject(new Error('MAIN world response timeout')), 10000);
+    const timeout = setTimeout(() => reject(new Error('MAIN world response timeout')), 60000);
 
     function handler(event: MessageEvent) {
       if (event.source !== window) return;

@@ -60,11 +60,11 @@ async function runNano(
     let session: any = null;
 
     if (typeof LM.create === 'function') {
-      session = await LM.create({ systemPrompt: SYSTEM_PROMPT, outputLanguage: 'en' });
+      session = await LM.create({ systemPrompt: SYSTEM_PROMPT, expectedOutputLanguages: ['en'] });
     } else if (typeof LM.createSession === 'function') {
-      session = await LM.createSession({ systemPrompt: SYSTEM_PROMPT, outputLanguage: 'en' });
+      session = await LM.createSession({ systemPrompt: SYSTEM_PROMPT, expectedOutputLanguages: ['en'] });
     } else if (typeof LM === 'function') {
-      session = await LM({ systemPrompt: SYSTEM_PROMPT, outputLanguage: 'en' });
+      session = await LM({ systemPrompt: SYSTEM_PROMPT, expectedOutputLanguages: ['en'] });
     } else {
       return { ok: false, plan: [], source: 'nano', error: 'LM methods: ' + Object.keys(LM).join(', ') };
     }
