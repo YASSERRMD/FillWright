@@ -48,9 +48,13 @@ const DETAIL_FIELDS: { key: string; label: string; group?: string }[] = [
   { key: 'employment.department', label: 'Department', group: 'Employment' },
 ];
 
-function setStatus(msg: string): void {
+let statusTimeout: ReturnType<typeof setTimeout> | undefined;
+
+function setStatus(msg: string, sticky = false): void {
   statusEl.textContent = msg;
-  setTimeout(() => { statusEl.textContent = 'Ready'; }, 3000);
+  if (statusTimeout) clearTimeout(statusTimeout);
+  statusTimeout = undefined;
+  if (!sticky) statusTimeout = setTimeout(() => { statusEl.textContent = 'Ready'; }, 4000);
 }
 
 // --- Tabs ---
@@ -459,17 +463,25 @@ async function fillForm(): Promise<void> {
     return;
   }
 
-  setStatus('Filling...');
+  const prevLabel = btnFill.textContent;
+  btnFill.disabled = true;
+  btnFill.textContent = 'Filling...';
+  setStatus('Filling form... (watch the page)', true);
 
   try {
     const response = await chrome.tabs.sendMessage(tab.id, { type: 'FILL_FORM' });
-    if (response?.filled) {
-      setStatus('Fill plan sent. Review in the page.');
+    if (response?.summary?.message) {
+      setStatus(response.summary.message);
+    } else if (response?.filled) {
+      setStatus('Fill complete. Review the page.');
     } else {
       setStatus(response?.error ?? 'Nothing to fill on this page');
     }
   } catch {
     setStatus('Reload the page and try again.');
+  } finally {
+    btnFill.disabled = false;
+    btnFill.textContent = prevLabel;
   }
 }
 
