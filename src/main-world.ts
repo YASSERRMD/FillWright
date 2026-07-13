@@ -57,24 +57,28 @@ async function runNano(
       }
     }
 
+    console.log('[Fillwright MAIN] Creating session...');
     let session: any = null;
 
     if (typeof LM.create === 'function') {
-      session = await LM.create({ systemPrompt: SYSTEM_PROMPT, expectedOutputLanguages: ['en'] });
+      session = await LM.create();
     } else if (typeof LM.createSession === 'function') {
-      session = await LM.createSession({ systemPrompt: SYSTEM_PROMPT, expectedOutputLanguages: ['en'] });
+      session = await LM.createSession();
     } else if (typeof LM === 'function') {
-      session = await LM({ systemPrompt: SYSTEM_PROMPT, expectedOutputLanguages: ['en'] });
+      session = await LM();
     } else {
-      return { ok: false, plan: [], source: 'nano', error: 'LM methods: ' + Object.keys(LM).join(', ') };
+      return { ok: false, plan: [], source: 'nano', error: 'No create method. Keys: ' + Object.keys(LM).join(', ') };
     }
 
-    const prompt = 'Given this form schema:\n' + JSON.stringify(schema) + '\n\nAnd this user profile:\n' + JSON.stringify(profile) + '\n\nMap profile data to form fields. Return a JSON array of fill steps.';
+    console.log('[Fillwright MAIN] Session created, prompting...');
 
-    console.log('[Fillwright MAIN] Calling Gemini Nano...');
-    const raw = await session.prompt(prompt);
-    if (typeof session.destroy === 'function') session.destroy();
+    const schemaStr = JSON.stringify({ fields: schema.fields }, null, 0);
+    const profileStr = JSON.stringify(profile, null, 0);
+    const userPrompt = 'Given this form schema:\n' + schemaStr + '\n\nAnd this user profile:\n' + profileStr + '\n\nReturn ONLY a JSON array. Each element: {"tool":"fill_field"|"select_option"|"toggle","field_id":"...","value":"...","confidence":0.0-1.0}. No prose.';
+
+    const raw = await session.prompt(userPrompt);
     console.log('[Fillwright MAIN] Raw response:', raw);
+    if (typeof session.destroy === 'function') session.destroy();
 
     let cleaned = raw.trim();
     const fence = '```';
@@ -87,7 +91,6 @@ async function runNano(
     }
     cleaned = cleaned.trim();
 
-    // Extract JSON array — model may return prose before/after the JSON
     const firstBracket = cleaned.indexOf('[');
     const lastBracket = cleaned.lastIndexOf(']');
     if (firstBracket !== -1 && lastBracket > firstBracket) {
