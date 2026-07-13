@@ -1,20 +1,39 @@
 // Fillwright Offscreen Document
-// This runs in the page context and has access to window.LanguageModel
+// Runs as an extension page, where Chrome exposes the Gemini Nano Prompt API
+// (window.LanguageModel). Regular web pages do not get this API, so form-fill
+// planning is routed here: content script -> background -> offscreen.
 
-console.log('[Fillwright Offscreen] Loaded. window.LanguageModel:', typeof (window as any).LanguageModel);
-console.log('[Fillwright Offscreen] window.ai:', typeof (window as any).ai);
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+export {};
+
+const w = window as any;
+console.log('[Fillwright Offscreen] Loaded. window.LanguageModel:', typeof w.LanguageModel);
+console.log('[Fillwright Offscreen] window.ai:', typeof w.ai);
+
+function getLanguageModel(): any {
+  if (typeof w.LanguageModel === 'function') return w.LanguageModel;
+  if (typeof w.LanguageModel === 'object' && w.LanguageModel) return w.LanguageModel;
+  if (w.ai) {
+    if (w.ai.languageModel) return w.ai.languageModel;
+    if (w.ai.originTrial && w.ai.originTrial.languageModel) return w.ai.originTrial.languageModel;
+  }
+  return null;
+}
 
 async function checkNanoAvailability(): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const LM = (window as any).LanguageModel;
+  const LM = getLanguageModel();
   if (!LM) {
     console.log('[Fillwright Offscreen] LanguageModel not found on window');
     return 'unavailable';
   }
   try {
-    const status = await LM.availability();
-    console.log('[Fillwright Offscreen] LanguageModel status:', status);
-    return status as string;
+    if (typeof LM.availability === 'function') {
+      const status = await LM.availability();
+      console.log('[Fillwright Offscreen] LanguageModel status:', status);
+      return status as string;
+    }
+    return 'available';
   } catch (err) {
     console.error('[Fillwright Offscreen] LanguageModel error:', err);
     return 'unavailable';
@@ -25,52 +44,49 @@ async function runNanoPlan(
   schema: { fields: Array<Record<string, unknown>> },
   profile: Record<string, string>
 ): Promise<{ ok: boolean; plan: Array<Record<string, unknown>>; source: string; error?: string }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const LM = (window as any).LanguageModel;
+  const LM = getLanguageModel();
   if (!LM) {
     return { ok: false, plan: [], source: 'nano', error: 'LanguageModel not available' };
   }
 
   try {
-    const status = await LM.availability();
-    if (status !== 'available') {
-      return { ok: false, plan: [], source: 'nano', error: `Model status: ${status}` };
+    if (typeof LM.availability === 'function') {
+      const status = await LM.availability();
+      if (status !== 'available') {
+        return { ok: false, plan: [], source: 'nano', error: `Model status: ${status}` };
+      }
     }
 
-    const SYSTEM_PROMPT = `You are a form-filling assistant. You map profile data to form fields.
+    console.log('[Fillwright Offscreen] Creating session...');
+    const session = await LM.create();
 
-Rules:
-1. Return ONLY a JSON array of fill steps. No prose, no markdown fences.
-2. Each step: { "tool": "fill_field"|"select_option"|"toggle", "field_id": "...", "value": "...", "confidence": 0.0-1.0 }
-3. For select_option, match by visible label or value.
-4. For toggle, use "true" or "false" as value.
-5. Split full name into given/family as needed.
-6. Normalize dates to each field's pattern.
-7. Normalize country names to match select options.
-8. If confidence < 0.5, leave the field empty (omit from the plan).
-9. Do not guess. Leave empty rather than guess.
-10. Do not include fields not present in the schema.`;
-
-    const session = await LM.createSession({ systemPrompt: SYSTEM_PROMPT });
-    const prompt = `Given this form schema:
-${JSON.stringify(schema)}
-
-And this user profile:
-${JSON.stringify(profile)}
-
-Map profile data to form fields. Return a JSON array of fill steps.`;
+    const schemaStr = JSON.stringify({ fields: schema.fields });
+    const profileStr = JSON.stringify(profile);
+    const userPrompt =
+      'Given this form schema:\n' + schemaStr +
+      '\n\nAnd this user profile:\n' + profileStr +
+      '\n\nReturn ONLY a JSON array. Each element: {"tool":"fill_field"|"select_option"|"toggle","field_id":"...","value":"...","confidence":0.0-1.0}. No prose.';
 
     console.log('[Fillwright Offscreen] Sending prompt to Gemini Nano...');
-    const raw = await session.prompt(prompt);
-    session.destroy();
+    const raw = await session.prompt(userPrompt);
+    if (typeof session.destroy === 'function') session.destroy();
     console.log('[Fillwright Offscreen] Raw response:', raw);
 
     let cleaned = raw.trim();
-    if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-    else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned.slice(3);
+      if (cleaned.startsWith('json')) cleaned = cleaned.slice(4);
+    }
     if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+    cleaned = cleaned.trim();
 
-    const parsed = JSON.parse(cleaned.trim());
+    const firstBracket = cleaned.indexOf('[');
+    const lastBracket = cleaned.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket > firstBracket) {
+      cleaned = cleaned.substring(firstBracket, lastBracket + 1);
+    }
+
+    const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed)) {
       return { ok: false, plan: [], source: 'nano', error: 'Not an array' };
     }
@@ -82,22 +98,23 @@ Map profile data to form fields. Return a JSON array of fill steps.`;
 
     return { ok: true, plan: validSteps, source: 'nano' };
   } catch (err) {
+    console.error('[Fillwright Offscreen] Error:', err);
     return { ok: false, plan: [], source: 'nano', error: String(err) };
   }
 }
 
-// Listen for messages from background worker
+// Listen for messages forwarded by the background worker.
+// Uses OFFSCREEN_* types so broadcasts from content scripts are not
+// double-handled here and by the background listener.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  console.log('[Fillwright Offscreen] Received message:', msg.type);
-
-  if (msg.type === 'CHECK_NANO') {
+  if (msg.type === 'OFFSCREEN_CHECK_NANO') {
     checkNanoAvailability().then((status) => {
       sendResponse({ status });
     });
     return true;
   }
 
-  if (msg.type === 'RUN_NANO') {
+  if (msg.type === 'OFFSCREEN_RUN_NANO') {
     runNanoPlan(msg.schema, msg.profile).then((result) => {
       sendResponse(result);
     });

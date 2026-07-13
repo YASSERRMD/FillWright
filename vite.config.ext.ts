@@ -10,6 +10,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         popup: resolve(__dirname, 'src/popup/popup.html'),
+        offscreen: resolve(__dirname, 'src/offscreen/offscreen.html'),
         content: resolve(__dirname, 'src/content.ts'),
         background: resolve(__dirname, 'src/background.ts'),
         'main-world': resolve(__dirname, 'src/main-world.ts'),
@@ -30,18 +31,24 @@ export default defineConfig({
       closeBundle() {
         const dist = resolve(__dirname, 'dist');
 
-        // Move popup.html from dist/src/popup/ to dist/
-        const srcPopup = resolve(dist, 'src/popup/popup.html');
-        const destPopup = resolve(dist, 'popup.html');
-        if (existsSync(srcPopup)) {
-          renameSync(srcPopup, destPopup);
-          let html = readFileSync(destPopup, 'utf-8');
+        // Move HTML pages from dist/src/** to dist/ and fix asset paths
+        const pages = [
+          { from: 'src/popup/popup.html', to: 'popup.html', js: 'popup.js' },
+          { from: 'src/offscreen/offscreen.html', to: 'offscreen.html', js: 'offscreen.js' },
+        ];
+        for (const page of pages) {
+          const srcHtml = resolve(dist, page.from);
+          const destHtml = resolve(dist, page.to);
+          if (!existsSync(srcHtml)) continue;
+          renameSync(srcHtml, destHtml);
+          let html = readFileSync(destHtml, 'utf-8');
           html = html.replace(/href="(?:\.\.\/\.\.\/)?assets\//g, 'href="assets/');
-          html = html.replace(/src="(?:\.\.\/\.\.\/)?popup\.js"/g, 'src="popup.js"');
+          html = html.replace(/href="(?:\.\.\/\.\.\/)?chunks\//g, 'href="chunks/');
+          html = html.replace(new RegExp(`src="(?:\\.\\.\\/\\.\\.\\/)?${page.js}"`, 'g'), `src="${page.js}"`);
           html = html.replace(/src="(?:\.\.\/)?icons\//g, 'src="icons/');
-          writeFileSync(destPopup, html);
-          rmSync(resolve(dist, 'src'), { recursive: true, force: true });
+          writeFileSync(destHtml, html);
         }
+        rmSync(resolve(dist, 'src'), { recursive: true, force: true });
 
         // Copy manifest.json
         const manifest = JSON.parse(readFileSync(resolve(__dirname, 'manifest.json'), 'utf-8'));
