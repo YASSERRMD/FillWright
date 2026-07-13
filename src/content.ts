@@ -14,6 +14,14 @@ function getProfileFromStorage(): Promise<Record<string, string>> {
   });
 }
 
+function ensureStyles(): void {
+  if (document.getElementById('fw-anim-style')) return;
+  const s = document.createElement('style');
+  s.id = 'fw-anim-style';
+  s.textContent = '@keyframes fw-slide-in{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}@keyframes fw-spin{to{transform:rotate(360deg)}}';
+  document.head.appendChild(s);
+}
+
 function showNotification(message: string, type: 'info' | 'error' | 'success'): void {
   const existing = document.getElementById('fillwright-notification');
   if (existing) existing.remove();
@@ -26,14 +34,45 @@ function showNotification(message: string, type: 'info' | 'error' | 'success'): 
   div.id = 'fillwright-notification';
   div.style.cssText = `position:fixed;bottom:80px;right:20px;background:${colors[type].bg};color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:2147483646;max-width:350px;border-left:4px solid ${colors[type].border};animation:fw-slide-in 0.3s ease;`;
   div.textContent = message;
-  if (!document.getElementById('fw-anim-style')) {
-    const s = document.createElement('style');
-    s.id = 'fw-anim-style';
-    s.textContent = '@keyframes fw-slide-in{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}';
-    document.head.appendChild(s);
-  }
+  ensureStyles();
   document.body.appendChild(div);
   setTimeout(() => { div.style.transition = 'opacity 0.3s'; div.style.opacity = '0'; setTimeout(() => div.remove(), 300); }, 5000);
+}
+
+// --- Fill button progress state ---
+// Site CSS can override plain inline styles, so working/idle states are set
+// with !important, and the label is rebuilt with a spinner element.
+
+function getFillButton(): HTMLButtonElement | null {
+  return document.getElementById('fillwright-ext-btn') as HTMLButtonElement | null;
+}
+
+function setButtonWorking(label: string): void {
+  const button = getFillButton();
+  if (!button) return;
+  ensureStyles();
+  button.replaceChildren();
+  const spinner = document.createElement('span');
+  spinner.style.cssText = 'display:inline-block;width:12px;height:12px;border:2px solid rgba(27,42,74,0.35);border-top-color:#1B2A4A;border-radius:50%;margin-right:8px;vertical-align:-2px;animation:fw-spin 0.8s linear infinite;';
+  button.appendChild(spinner);
+  button.appendChild(document.createTextNode(label));
+  button.style.setProperty('background', '#C5A55A', 'important');
+  button.style.setProperty('color', '#1B2A4A', 'important');
+  button.style.setProperty('font-size', '15px', 'important');
+  button.style.setProperty('opacity', '1', 'important');
+  button.style.setProperty('text-indent', '0', 'important');
+  button.style.setProperty('visibility', 'visible', 'important');
+  button.disabled = true;
+}
+
+function setButtonIdle(): void {
+  const button = getFillButton();
+  if (!button) return;
+  button.replaceChildren(document.createTextNode('Fill Form'));
+  button.style.setProperty('background', '#1B2A4A', 'important');
+  button.style.setProperty('color', 'white', 'important');
+  button.style.setProperty('opacity', '1', 'important');
+  button.disabled = false;
 }
 
 function showNoProfileOverlay(): void {
@@ -59,10 +98,10 @@ function injectFillwrightUI(): void {
   const btn = document.createElement('button');
   btn.id = 'fillwright-ext-btn';
   btn.textContent = 'Fill Form';
-  btn.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:12px 24px;background:#1B2A4A;color:white;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:2147483646;font-family:Georgia,serif;letter-spacing:0.5px;transition:all 0.2s;';
-  btn.addEventListener('mouseenter', () => { btn.style.background = '#0F1B33'; });
-  btn.addEventListener('mouseleave', () => { btn.style.background = '#1B2A4A'; });
-  btn.addEventListener('click', () => handleFill(btn));
+  btn.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:12px 24px;background:#1B2A4A;color:white;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:2147483646;font-family:Georgia,serif;letter-spacing:0.5px;transition:none;';
+  btn.addEventListener('mouseenter', () => { if (!btn.disabled) btn.style.setProperty('background', '#0F1B33', 'important'); });
+  btn.addEventListener('mouseleave', () => { if (!btn.disabled) btn.style.setProperty('background', '#1B2A4A', 'important'); });
+  btn.addEventListener('click', () => handleFill());
   document.body.appendChild(btn);
 }
 
@@ -321,9 +360,11 @@ function applyFillPlan(plan: Array<{ tool: string; field_id: string; value: stri
 
 // --- Main handler ---
 
-async function handleFill(btn?: HTMLButtonElement): Promise<void> {
-  if (!enabled) return;
-  if (btn) { btn.textContent = 'Scanning...'; btn.style.background = '#C5A55A'; btn.style.color = '#1B2A4A'; btn.disabled = true; }
+type FillSummary = { filled: number; planned: number; source: string; message: string };
+
+async function handleFill(): Promise<FillSummary | null> {
+  if (!enabled) return null;
+  setButtonWorking('Scanning...');
 
   try {
     const rawProfile = await getProfileFromStorage();
@@ -332,13 +373,19 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
     for (const [key, val] of Object.entries(rawProfile)) {
       if (typeof val === 'string' && val.trim()) profile[key] = val.trim();
     }
-    if (Object.keys(profile).length === 0) { showNoProfileOverlay(); return; }
+    if (Object.keys(profile).length === 0) {
+      showNoProfileOverlay();
+      return { filled: 0, planned: 0, source: 'none', message: 'No profile. Create one first.' };
+    }
 
     const schema = scanPage();
     console.log(`[Fillwright] Scanned ${schema.fields.length} fields:`, schema.fields);
-    if (schema.fields.length === 0) { showNotification('No form fields found on this page.', 'error'); return; }
+    if (schema.fields.length === 0) {
+      showNotification('No form fields found on this page.', 'error');
+      return { filled: 0, planned: 0, source: 'none', message: 'No form fields found on this page.' };
+    }
 
-    if (btn) btn.textContent = 'Planning...';
+    setButtonWorking('Planning...');
 
     let source = 'fallback';
     let plan: Array<{ tool: string; field_id: string; value: string; confidence: number }> = [];
@@ -349,7 +396,7 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
       console.log('[Fillwright] Nano status:', status);
 
       if (status === 'available') {
-        if (btn) btn.textContent = 'Asking Gemini Nano...';
+        setButtonWorking('Asking Gemini Nano...');
         const nanoResult = await callNanoRun(schema, profile);
         console.log('[Fillwright] Nano result:', nanoResult);
 
@@ -389,23 +436,28 @@ async function handleFill(btn?: HTMLButtonElement): Promise<void> {
     if (plan.length === 0) {
       const labels = schema.fields.map((f) => f.label ?? f.nearbyText ?? f.type).join(', ');
       showNotification(`Found ${schema.fields.length} fields but couldn't match. Detected: ${labels}`, 'error');
-      return;
+      return { filled: 0, planned: 0, source, message: `Found ${schema.fields.length} fields but couldn't match any.` };
     }
 
-    if (btn) btn.textContent = `Filling ${plan.length} fields...`;
+    setButtonWorking(`Filling ${plan.length} fields...`);
     const filled = applyFillPlan(plan);
-    showNotification(`Filled ${filled}/${plan.length} fields (${source})`, 'success');
+    const message = `Filled ${filled}/${plan.length} fields (${source})`;
+    showNotification(message, 'success');
+    return { filled, planned: plan.length, source, message };
   } catch (err) {
     console.error('[Fillwright] Error:', err);
     showNotification(`Error: ${String(err)}`, 'error');
+    return { filled: 0, planned: 0, source: 'none', message: `Error: ${String(err)}` };
   } finally {
-    if (btn) { btn.textContent = 'Fill Form'; btn.style.background = '#1B2A4A'; btn.style.color = 'white'; btn.disabled = false; }
+    setButtonIdle();
   }
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'FILL_FORM') {
-    handleFill().then(() => sendResponse({ filled: true })).catch((err) => sendResponse({ filled: false, error: String(err) }));
+    handleFill()
+      .then((summary) => sendResponse({ filled: (summary?.filled ?? 0) > 0, summary }))
+      .catch((err) => sendResponse({ filled: false, error: String(err) }));
     return true;
   }
   if (msg.type === 'TOGGLE_FILLWRIGHT') {
